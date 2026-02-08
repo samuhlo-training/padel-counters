@@ -28,11 +28,17 @@ export async function processStatsRequest(
 ): Promise<void> {
   const { matchId, subtype, playerId } = payload;
   const matchIdInt = parseInt(matchId);
+  if (Number.isNaN(matchIdInt)) {
+    throw new Error("Invalid matchId");
+  }
 
   try {
     if (subtype === "PLAYER") {
       if (!playerId) throw new Error("Missing playerId for PLAYER stats");
       const playerIdInt = parseInt(playerId);
+      if (Number.isNaN(playerIdInt)) {
+        throw new Error("Invalid playerId");
+      }
 
       const [stats] = await db
         .select()
@@ -97,6 +103,12 @@ export async function processStatsRequest(
           status: matchData.status,
           servingPlayerId: matchData.servingPlayerId,
         },
+      });
+    } else {
+      // ◼️ UNKNOWN SUBTYPE: Notificar al cliente de forma determinista
+      sendJson(socket, {
+        type: "ERROR",
+        payload: `Unknown stats subtype: "${subtype}". Supported subtypes are: PLAYER, MATCH_SUMMARY`,
       });
     }
   } catch (error: unknown) {

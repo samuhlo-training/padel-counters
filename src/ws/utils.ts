@@ -99,7 +99,7 @@ export async function broadcastMatchCreated(match: {
   id: number;
   [key: string]: unknown;
 }): Promise<void> {
-  if (!match?.id) {
+  if (match?.id == null) {
     throw new Error("[ERR]   :: MATCH_MISSING :: Match not initialized");
   }
   console.log(

@@ -21,7 +21,7 @@ export function generateAutomatedComment(data: TelemetryData): string {
   const { playerName, method, stroke, speed } = data;
 
   // 1. CASO: VELOCIDAD EXTREMA (> 130 km/h)
-  if (speed && speed > 130 && (stroke === "smash" || method === "winner")) {
+  if (speed && speed > 130 && stroke === "smash" && method === "winner") {
     const templates = [
       `¡MISIL DE ${playerName}! 🚀 Smash a ${speed}km/h.`,
       `¡${speed}km/h! ${playerName} acaba de romper la barrera del sonido.`,

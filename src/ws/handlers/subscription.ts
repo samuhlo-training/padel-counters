@@ -46,7 +46,20 @@ export async function handleSubscribe(
 
   // 3. Send initial snapshot (Warmup)
   try {
-    const snapshot = await getMatchSnapshot(Number(matchIdStr));
+    // ◼️ VALIDACIÓN: Verificar que matchIdStr sea un número válido
+    const matchIdInt = Number.parseInt(matchIdStr, 10);
+    if (!Number.isInteger(matchIdInt) || Number.isNaN(matchIdInt)) {
+      console.error(
+        `[WS]    :: SUBSCRIBE_ERR :: Invalid matchId: "${matchIdStr}"`,
+      );
+      sendJson(socket, {
+        type: "ERROR",
+        payload: `Invalid matchId: "${matchIdStr}". Must be a valid integer.`,
+      });
+      return;
+    }
+
+    const snapshot = await getMatchSnapshot(matchIdInt);
     sendJson(socket, {
       type: "MATCH_UPDATE",
       matchId: matchIdStr,

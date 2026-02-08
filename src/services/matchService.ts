@@ -116,6 +116,10 @@ export const MatchService = {
     const matchIdInt = parseInt(matchId);
     const playerIdInt = parseInt(playerId);
 
+    if (Number.isNaN(matchIdInt) || Number.isNaN(playerIdInt)) {
+      throw new Error(`Invalid matchId or playerId: ${matchId}, ${playerId}`);
+    }
+
     // 1. FETCH MATCH
     const [matchData] = await db
       .select()
@@ -271,9 +275,10 @@ export const MatchService = {
           ...setCompleted,
         });
       }
-
       // D. Update Match
-      if (matchData.status === "scheduled") finalStatus = "live";
+      if (matchData.status === "scheduled" && finalStatus !== "finished") {
+        finalStatus = "live";
+      }
 
       await tx
         .update(matches)
@@ -390,6 +395,10 @@ export const MatchService = {
       ].filter((id): id is number => id != null);
 
       const uniquePlayerIds = [...new Set(allPlayerIds)];
+
+      if (uniquePlayerIds.length !== 4) {
+        throw new Error("Match requires 4 distinct players");
+      }
 
       if (uniquePlayerIds.length > 0) {
         await tx.insert(matchStats).values(

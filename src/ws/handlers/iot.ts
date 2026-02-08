@@ -29,6 +29,11 @@ export async function handleDeviceAuth(
   payload: ClientMessage & { type: "AUTH_DEVICE" },
 ): Promise<void> {
   const { token } = payload;
+  if (!token || typeof token !== "string") {
+    console.warn(`[IoT]   :: AUTH_FAIL     :: Missing or invalid token`);
+    sendJson(socket, { type: "ERROR", payload: "Missing or invalid token" });
+    return;
+  }
   console.log(
     `[IoT]   :: AUTH_ATTEMPT  :: token_preview: ${token.slice(0, 6)}...`,
   );
