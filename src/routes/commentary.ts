@@ -8,17 +8,19 @@
  */
 import { Hono } from "hono";
 import { db } from "../db/db.ts";
-import { commentary } from "../db/schema.ts";
+import { commentary, matches } from "../db/schema.ts";
 import {
   createCommentarySchema,
   listCommentaryQuerySchema,
 } from "../validation/commentary.ts";
 import { matchIdParamSchema } from "../validation/matches.ts";
 import { desc, eq } from "drizzle-orm";
+import { broadcastCommentary } from "../ws/server.ts";
 
 // =============================================================================
 // █ CONFIG: ROUTER SETUP
 // =============================================================================
+// [INFO] -> Usamos Hono para este router por su simplicidad y speed.
 export const commentaryApp = new Hono();
 
 /**
@@ -37,7 +39,7 @@ commentaryApp.get("/", (c) => {
 // █ ENDPOINT: GET /:id
 // =============================================================================
 // DESC: Obtiene el feed de comentarios de un partido específico.
-commentaryApp.get("/:id", async (c) => {
+commentaryApp.get("/:id/commentary", async (c) => {
   // 1. VALIDATION: PARAMS (URL)
   const paramsResult = matchIdParamSchema.safeParse(c.req.param());
   if (!paramsResult.success) {
@@ -81,7 +83,8 @@ commentaryApp.get("/:id", async (c) => {
 // █ ENDPOINT: POST /:id
 // =============================================================================
 // DESC: Agrega un nuevo evento (gol, tarjeta, etc.) al feed del partido.
-commentaryApp.post("/:id", async (c) => {
+//       Y lo retransmite vía WebSocket.
+commentaryApp.post("/:id/commentary", async (c) => {
   // 1. VALIDATION: PARAMS
   const paramsResult = matchIdParamSchema.safeParse(c.req.param());
   if (!paramsResult.success) {
@@ -111,14 +114,39 @@ commentaryApp.post("/:id", async (c) => {
   const commentaryData = bodyResult.data;
 
   try {
-    // 3. PERSISTENCE
+    // 3. AUTOMATIC CONTEXT (Contexto Automático)
+    // [EXPLICACION] -> Si el comentario no trae set/juego explícito, lo tomamos del partido.
+    // Esto es vital para mantener la coherencia cronológica en el feed.
+    const [existingMatch] = await db
+      .select({
+        set: matches.currentSetIdx,
+        pairAGames: matches.pairAGames,
+        pairBGames: matches.pairBGames,
+      })
+      .from(matches)
+      .where(eq(matches.id, matchId));
+
+    if (!existingMatch) {
+      return c.json({ error: "Match not found" }, 404);
+    }
+
+    // Calculamos el gameNumber actual (Suma de juegos + 1 para el actual)
+    const currentGameNumber =
+      (existingMatch.pairAGames ?? 0) + (existingMatch.pairBGames ?? 0) + 1;
+
+    // 4. PERSISTENCE
     console.log(`[DB]    >> INSERTING COMMENTARY :: matchId: ${matchId}`);
 
     const [newCommentary] = await db
       .insert(commentary)
       .values({
-        ...commentaryData,
-        matchId, // Ensure URL param takes precedence
+        matchId,
+        message: commentaryData.message,
+        tags: commentaryData.tags,
+        // Solo asignar si el usuario los proveyó explícitamente
+        // Comentarios generales pueden no tener set/game específico
+        setNumber: commentaryData.setNumber ?? null,
+        gameNumber: commentaryData.gameNumber ?? null,
       })
       .returning();
 
@@ -126,8 +154,17 @@ commentaryApp.post("/:id", async (c) => {
       return c.json({ error: "Failed to create commentary" }, 500);
     }
 
-    // [SUCCESS] -> Log de confirmación
+    // [SUCCESS] -> Feedback en consola
     console.log(`[DB]    ++ SAVED COMMENTARY     :: id: ${newCommentary.id}`);
+
+    // 5. REAL-TIME BROADCAST
+    // [WS] -> Enviamos el comentario a todos los suscritos a este partido.
+    // Usamos Promise.resolve().then(...).catch(...) para capturar tanto errores síncronos como asíncronos.
+    Promise.resolve()
+      .then(() => broadcastCommentary(String(matchId), newCommentary))
+      .catch((wsError) => {
+        console.warn(`[WARN]  :: BCAST_FAIL    :: match: ${matchId}`, wsError);
+      });
 
     return c.json({ data: newCommentary }, 201);
   } catch (error) {

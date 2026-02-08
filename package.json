@@ -1,13 +1,17 @@
 {
-  "name": "sport-counters",
+  "name": "padel-counters",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
+    "test": "bun test --timeout=30000",
+    "test:fast": "bun test",
+    "test:watch": "bun test --watch",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:purge": "bun scripts/db_purge.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

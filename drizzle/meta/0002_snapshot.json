@@ -1,6 +1,6 @@
 {
-  "id": "30bbe0f0-18c7-4cd2-bd92-6fb17fc2db8a",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "ab56e858-f938-40db-bc9a-f54fc28b6ee5",
+  "prevId": "6baf73b6-6f9c-4f22-aee0-0fdc3338646a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -138,7 +138,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "match_sets_match_id_set_number_unique": {
+          "name": "match_sets_match_id_set_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "match_id",
+            "set_number"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -224,7 +233,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "match_stats_match_player_unique": {
+          "name": "match_stats_match_player_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "match_id",
+            "player_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -239,17 +257,26 @@
           "primaryKey": true,
           "notNull": true
         },
+        "match_type": {
+          "name": "match_type",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'friendly'"
+        },
         "pair_a_name": {
           "name": "pair_a_name",
-          "type": "text",
+          "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'Pair A'"
         },
         "pair_b_name": {
           "name": "pair_b_name",
-          "type": "text",
+          "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'Pair B'"
         },
         "pair_a_player1_id": {
           "name": "pair_a_player1_id",
@@ -299,6 +326,20 @@
         },
         "pair_b_games": {
           "name": "pair_b_games",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "pair_a_sets": {
+          "name": "pair_a_sets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "pair_b_sets": {
+          "name": "pair_b_sets",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -543,6 +584,20 @@
           "notNull": false,
           "default": "'winner'"
         },
+        "stroke": {
+          "name": "stroke",
+          "type": "padel_stroke",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_net_point": {
+          "name": "is_net_point",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "score_after_pair_a": {
           "name": "score_after_pair_a",
           "type": "text",
@@ -632,6 +687,22 @@
         "canceled"
       ]
     },
+    "public.padel_stroke": {
+      "name": "padel_stroke",
+      "schema": "public",
+      "values": [
+        "forehand",
+        "backhand",
+        "smash",
+        "bandeja",
+        "vibora",
+        "volley_forehand",
+        "volley_backhand",
+        "lob",
+        "drop_shot",
+        "wall_boast"
+      ]
+    },
     "public.point_method": {
       "name": "point_method",
       "schema": "public",
@@ -639,11 +710,8 @@
         "winner",
         "unforced_error",
         "forced_error",
-        "smash",
-        "volley",
         "service_ace",
-        "double_fault",
-        "penalty"
+        "double_fault"
       ]
     }
   },

@@ -54,17 +54,55 @@ const isoDateString = z
  * Reglas estrictas para crear un partido.
  * INCLUYE: Validación cruzada (superRefine) para lógica temporal.
  */
+/**
+ * ◼️ SCHEMA: CREATE_MATCH
+ * ---------------------------------------------------------
+ * Reglas estrictas para crear un partido.
+ * INCLUYE: Validación cruzada (superRefine) para lógica temporal.
+ */
 export const createMatchSchema = z
   .object({
-    sport: z.string().min(1).max(100),
-    homeTeam: z.string().min(1).max(200),
-    awayTeam: z.string().min(1).max(200),
+    matchType: z
+      .enum(["friendly", "competitive", "tournament"])
+      .default("friendly"),
+    pairAName: z.string().min(1).max(200).optional(),
+    pairBName: z.string().min(1).max(200).optional(),
+    pairAPlayer1Id: z.coerce.number().int().positive(),
+    pairAPlayer2Id: z.coerce.number().int().positive(),
+    pairBPlayer1Id: z.coerce.number().int().positive(),
+    pairBPlayer2Id: z.coerce.number().int().positive(),
+    hasGoldPoint: z.boolean().default(false), // Modo Punto de Oro (default: clásico con ventajas)
     startTime: isoDateString,
-    endTime: isoDateString,
-    homeScore: z.coerce.number().int().nonnegative().optional(),
-    awayScore: z.coerce.number().int().nonnegative().optional(),
+    endTime: isoDateString.optional(),
   })
   .superRefine((data, ctx) => {
+    // [VALIDATION] -> Validar unicidad de los 4 IDs de jugadores
+    const playerIds = [
+      data.pairAPlayer1Id,
+      data.pairAPlayer2Id,
+      data.pairBPlayer1Id,
+      data.pairBPlayer2Id,
+    ];
+
+    const uniqueIds = new Set(playerIds);
+
+    if (uniqueIds.size !== 4) {
+      // Encontrar duplicados
+      const duplicates = playerIds.filter(
+        (id, index) => playerIds.indexOf(id) !== index,
+      );
+      const uniqueDuplicates = [...new Set(duplicates)];
+
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Los IDs de jugadores deben ser únicos. IDs duplicados: ${uniqueDuplicates.join(", ")}`,
+        path: ["pairAPlayer1Id"],
+      });
+    }
+
+    // [VALIDATION] -> Validar rango temporal (si endTime existe)
+    if (!data.endTime) return; // Si no hay fin, no validamos rango
+
     const start = new Date(data.startTime).getTime();
     const end = new Date(data.endTime).getTime();
 
@@ -83,7 +121,10 @@ export const createMatchSchema = z
  * ---------------------------------------------------------
  * Permite actualizar solo los puntajes.
  */
+// [DEPRECATED] -> Updates handled via WebSocket events (POINT_SCORED)
+/*
 export const updateScoreSchema = z.object({
   homeScore: z.coerce.number().int().nonnegative(),
   awayScore: z.coerce.number().int().nonnegative(),
 });
+*/

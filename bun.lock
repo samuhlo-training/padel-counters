@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "sport-counters",
+      "name": "padel-counters",
       "dependencies": {
         "@upstash/ratelimit": "^2.0.8",
         "@upstash/redis": "^1.36.2",

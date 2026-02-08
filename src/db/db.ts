@@ -8,6 +8,7 @@
 import "dotenv/config";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import * as schema from "./schema.ts";
 
 // =============================================================================
 // █ CORE: CONFIG & VALIDATION
@@ -28,4 +29,4 @@ export const pool = new Pool({
     "sslmode=require&uselibpqcompat=true",
 });
 
-export const db = drizzle(pool);
+export const db = drizzle(pool, { schema });

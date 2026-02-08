@@ -2,7 +2,7 @@
  * █ [API_ROUTE] :: MATCHES_HANDLER (HONO EDITION)
  * =====================================================================
  * DESC:   Gestiona operaciones CRUD para partidos.
- *         Refactorizado para usar el Framework Hono (DX Superior).
+ *         Refactorizado para Padel Pro (Gold Master Schema).
  * STATUS: STABLE
  * =====================================================================
  */
@@ -10,66 +10,41 @@ import { Hono } from "hono";
 import {
   createMatchSchema,
   listMatchesQuerySchema,
+  matchIdParamSchema,
 } from "../validation/matches.ts";
 import { db } from "../db/db.ts";
-import { matches } from "../db/schema.ts";
+import { matches, matchStats } from "../db/schema.ts";
 import { getMatchStatus } from "../utils/match-status.ts";
 import { desc } from "drizzle-orm";
-import { broadcastMatchCreated } from "../ws/server.ts";
+import { broadcastMatchCreated } from "../ws/server.ts"; // RESTORED
+import { pointActionSchema } from "../validation/point_action.ts";
+import { processPointScored } from "../controllers/match.ts";
 
-/**
- * ◼️ HONO CONTEXT ('c')
- * ---------------------------------------------------------
- * En Hono, 'c' significa Context. Reemplaza a 'req' y 'res'.
- * Es la navaja suiza (Swiss-army knife) del framework:
- * - c.req  -> El objeto Request (headers, query, body)
- * - c.json -> Helper para retornar respuestas JSON de forma segura
- * - c.text -> Helper para retornar respuestas de texto
- * - c.env  -> Variables de entorno definidas en Bun.serve (o Hono)
- */
-
-// =============================================================================
-// █ CONFIG: HONO MINI-APP
-// =============================================================================
 export const matchesApp = new Hono();
 
-// [CONST] -> MAX_LIMIT estricto para prevenir sobrecarga de la DB
 const MAX_LIMIT = 100;
 
 // =============================================================================
 // █ ENDPOINT: GET /
 // =============================================================================
-// DESC: Listar partidos mediante parámetros de consulta.
 matchesApp.get("/", async (c) => {
-  // 1. VALIDATION
-  // c.req.query() devuelve un objeto simple. Zod lo valida.
   const parsed = listMatchesQuerySchema.safeParse(c.req.query());
 
   if (!parsed.success) {
-    console.log(`[API]   :: INVALID_REQ   :: path: GET /matches`);
     return c.json(
-      {
-        error: "Failed to load matches",
-        details: JSON.stringify(parsed.error),
-      },
+      { error: "Invalid query params", details: parsed.error },
       400,
     );
   }
 
-  // 2. BUSINESS LOGIC
   const limit = Math.min(parsed.data.limit ?? 50, MAX_LIMIT);
 
   try {
-    // 3. ORM QUERY
     const data = await db
       .select()
       .from(matches)
       .orderBy(desc(matches.createdAt))
       .limit(limit);
-
-    // [SUCCESS] -> Log retrieval
-    // console.log(`[DB]    ++ FETCHED       :: count: ${data.length}`);
-    // ^ Comentado para evitar ruido, habilitar si es necesario.
 
     return c.json({ data });
   } catch (error) {
@@ -82,77 +57,164 @@ matchesApp.get("/", async (c) => {
 // █ ENDPOINT: POST /
 // =============================================================================
 matchesApp.post("/", async (c) => {
-  // [START] -> Processing Request
-
-  // 1. BODY VALIDATION
-  // "await c.req.json()" es la forma moderna de obtener el JSON Body.
   let body;
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
+
   const result = createMatchSchema.safeParse(body);
 
   if (!result.success) {
     console.log(
       `[API]   :: INVALID_BODY  :: ${JSON.stringify(result.error).slice(0, 100)}...`,
     );
-    return c.json(
-      {
-        error: "Validation failed",
-        details: JSON.stringify(result.error),
-      },
-      400,
-    );
+    return c.json({ error: "Validation failed", details: result.error }, 400);
   }
 
-  const { startTime, endTime, homeScore, awayScore, ...matchData } =
-    result.data;
+  const data = result.data;
 
-  // 2. BUSINESS RULE -> Cálculo del estado en el servidor
-  const calculatedStatus = getMatchStatus(startTime, endTime);
-
-  if (!calculatedStatus) {
-    return c.json({ error: "Invalid dates for status calculation" }, 400);
+  // Estado inicial
+  let calculatedStatus = "scheduled";
+  if (data.endTime) {
+    const status = getMatchStatus(data.startTime, data.endTime);
+    if (status) calculatedStatus = status;
+  } else {
+    if (new Date(data.startTime) <= new Date()) {
+      calculatedStatus = "live";
+    }
   }
 
   try {
-    // 3. PERSISTENCE
-    console.log(`[DB]    >> INSERTING     :: sport: ${matchData.sport}`);
-    const [event] = await db
-      .insert(matches)
-      .values({
-        ...matchData,
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
-        homeScore: homeScore ?? 0,
-        awayScore: awayScore ?? 0,
-        status: calculatedStatus,
-      })
-      .returning();
+    const newMatch = await db.transaction(async (tx) => {
+      // A. Insert Match (Relational Structure)
+      const [match] = await tx
+        .insert(matches)
+        .values({
+          pairAName: data.pairAName ?? "Pair A",
+          pairBName: data.pairBName ?? "Pair B",
+          pairAPlayer1Id: data.pairAPlayer1Id,
+          pairAPlayer2Id: data.pairAPlayer2Id,
+          pairBPlayer1Id: data.pairBPlayer1Id,
+          pairBPlayer2Id: data.pairBPlayer2Id,
+          servingPlayerId: data.pairAPlayer1Id, // Initial server
+          hasGoldPoint: data.hasGoldPoint, // Modo de juego (Punto de Oro vs Clásico)
 
-    if (!event) {
-      console.error(`[ERR]   :: CREATE_MATCH  :: Insert returned no rows`);
-      return c.json({ error: "Failed to create match" }, 500);
-    }
+          startTime: new Date(data.startTime),
+          endTime: data.endTime ? new Date(data.endTime) : null,
+          status: calculatedStatus as "scheduled" | "live" | "finished",
 
-    console.log(`[DB]    ++ SAVED         :: id: ${event.id}`);
+          // Initial Score Snapshot
+          currentSetIdx: 1,
+          pairAGames: 0,
+          pairBGames: 0,
+          pairAScore: "0",
+          pairBScore: "0",
+          isTieBreak: false,
+        })
+        .returning();
 
-    // 4. BROADCAST -> Magia en tiempo real (Real-time magic)
-    // Aislado para evitar que los fallos de transmisión interrumpan la solicitud después de la persistencia.
+      if (!match) throw new Error("Match insert failed");
+
+      // B. Init Stats for 4 players (deduplicated to avoid constraint violations)
+      const baseStats = {
+        matchId: match.id,
+        pointsWon: 0,
+        winners: 0,
+        unforcedErrors: 0,
+        smashWinners: 0, // NEW field
+      };
+
+      // Collect all player IDs, filter falsy, and deduplicate
+      const allPlayerIds = [
+        data.pairAPlayer1Id,
+        data.pairAPlayer2Id,
+        data.pairBPlayer1Id,
+        data.pairBPlayer2Id,
+      ].filter((id): id is number => id != null);
+
+      const uniquePlayerIds = [...new Set(allPlayerIds)];
+
+      // Map each unique ID to a stats object
+      const uniqueStatsArray = uniquePlayerIds.map((playerId) => ({
+        ...baseStats,
+        playerId,
+      }));
+
+      // E. Init Stats (only if we have players)
+      if (uniqueStatsArray.length > 0) {
+        await tx.insert(matchStats).values(uniqueStatsArray);
+      } else {
+        console.warn(
+          `[DB]    :: SKIP_STATS    :: No unique players to initialize for match ${match.id}`,
+        );
+      }
+
+      return match;
+    });
+
+    console.log(`[DB]    ++ SAVED         :: id: ${newMatch.id}`);
+
+    // Broadcast logic needs update to support MatchSnapshot type if strict
+    // But broadcastMatchCreated likely just sends the object.
     try {
-      broadcastMatchCreated(event);
-    } catch (broadcastError) {
-      console.error(
-        `[ERR]   :: BROADCAST_FAIL :: id: ${event.id}`,
-        broadcastError,
-      );
+      broadcastMatchCreated(newMatch);
+    } catch (e) {
+      console.error(`[ERR]   :: BCAST_FAIL    :: match: ${newMatch.id}`, e);
     }
 
-    return c.json({ data: event }, 201);
+    return c.json({ data: newMatch }, 201);
   } catch (error) {
     console.error(`[ERR]   :: CREATE_MATCH_ERR :: ${error}`);
     return c.json({ error: "Internal Server Error" }, 500);
+  }
+});
+
+/**
+ * ◼️ ENDPOINT: POST /:id/point
+ * ---------------------------------------------------------
+ * DESC: Procesa un punto marcado en el partido.
+ */
+matchesApp.post("/:id/point", async (c) => {
+  // 1. VALIDATION: PARAMS
+  const paramsResult = matchIdParamSchema.safeParse(c.req.param());
+  if (!paramsResult.success) {
+    return c.json({ error: "Invalid Match ID" }, 400);
+  }
+  const matchId = paramsResult.data.id;
+
+  // 2. VALIDATION: BODY
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const result = pointActionSchema.safeParse(body);
+  if (!result.success) {
+    return c.json({ error: "Invalid Action Data", details: result.error }, 400);
+  }
+
+  // 3. CONTROLLER LOGIC
+  try {
+    await processPointScored({
+      matchId: matchId.toString(),
+      playerId: result.data.playerId.toString(),
+      actionType: result.data.actionType,
+      stroke: result.data.stroke,
+      isNetPoint: result.data.isNetPoint,
+    });
+    return c.json({ success: true, message: "Point processed" });
+  } catch (error: any) {
+    console.error(`[ERR] :: POINT_PROCESS :: ${error.message}`);
+    if (error.message.includes("not found")) {
+      return c.json({ error: error.message }, 404);
+    }
+    if (error.message.includes("finished")) {
+      return c.json({ error: "Match is finished" }, 400);
+    }
+    return c.json({ error: error.message || "Internal Error" }, 500);
   }
 });
