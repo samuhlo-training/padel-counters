@@ -35,30 +35,30 @@ export async function handleSubscribe(
 ): Promise<void> {
   const matchIdStr = String(matchId);
 
-  // 1. Add to local map
+  // 1. VALIDACIÓN: Verificar que matchIdStr sea un número válido antes de cualquier operación
+  const matchIdInt = Number.parseInt(matchIdStr, 10);
+  if (!Number.isInteger(matchIdInt) || Number.isNaN(matchIdInt)) {
+    console.error(
+      `[WS]    :: SUBSCRIBE_ERR :: Invalid matchId: "${matchIdStr}"`,
+    );
+    sendJson(socket, {
+      type: "ERROR",
+      payload: `Invalid matchId: "${matchIdStr}". Must be a valid integer.`,
+    });
+    return;
+  }
+
+  // 2. Add to local map (ONLY IF VALID)
   if (!matchSubscribers.has(matchIdStr)) {
     matchSubscribers.set(matchIdStr, new Set());
   }
   matchSubscribers.get(matchIdStr)!.add(socket);
 
-  // 2. Subscribe to Bun pub/sub topic
+  // 3. Subscribe to Bun pub/sub topic (ONLY IF VALID)
   socket.subscribe(matchIdStr);
 
-  // 3. Send initial snapshot (Warmup)
+  // 4. Send initial snapshot (Warmup)
   try {
-    // ◼️ VALIDACIÓN: Verificar que matchIdStr sea un número válido
-    const matchIdInt = Number.parseInt(matchIdStr, 10);
-    if (!Number.isInteger(matchIdInt) || Number.isNaN(matchIdInt)) {
-      console.error(
-        `[WS]    :: SUBSCRIBE_ERR :: Invalid matchId: "${matchIdStr}"`,
-      );
-      sendJson(socket, {
-        type: "ERROR",
-        payload: `Invalid matchId: "${matchIdStr}". Must be a valid integer.`,
-      });
-      return;
-    }
-
     const snapshot = await getMatchSnapshot(matchIdInt);
     sendJson(socket, {
       type: "MATCH_UPDATE",
@@ -73,9 +73,11 @@ export async function handleSubscribe(
       type: "ERROR",
       payload: "Failed to fetch match state",
     });
+    // Si falla el fetch, tal vez queramos desuscribirnos para no quedar en estado inconsistente
+    // pero el matchId es válido, así que la suscripción pub/sub es técnicamente correcta para futuros updates.
   }
 
-  // 4. Confirm subscription
+  // 5. Confirm subscription
   sendJson(socket, {
     type: "SUBSCRIBED",
     payload: `Subscribed to match ${matchIdStr}`,

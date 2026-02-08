@@ -132,27 +132,27 @@ export async function handleTelemetryEvent(
         stroke,
         isNetPoint,
       });
+
+      // 5. AUTOMATED COMMENTARY (ONLY IF POINT WAS SCORED)
+      const [player] = await db
+        .select()
+        .from(players)
+        .where(eq(players.id, parseInt(playerId)));
+
+      const playerName = player ? player.name : `Jugador ${playerId}`;
+
+      const commentText = generateAutomatedComment({
+        playerName,
+        method,
+        stroke,
+        speed,
+        isNetPoint,
+      });
+
+      // 6. SAVE & BROADCAST COMMENTARY (via Service)
+      await MatchService.addCommentary(matchIdInt, commentText);
+      console.log(`[BOT]   :: COMMENTARY    :: ${commentText}`);
     }
-
-    // 5. AUTOMATED COMMENTARY
-    const [player] = await db
-      .select()
-      .from(players)
-      .where(eq(players.id, parseInt(playerId)));
-
-    const playerName = player ? player.name : `Jugador ${playerId}`;
-
-    const commentText = generateAutomatedComment({
-      playerName,
-      method,
-      stroke,
-      speed,
-      isNetPoint,
-    });
-
-    // 6. SAVE & BROADCAST COMMENTARY (via Service)
-    await MatchService.addCommentary(matchIdInt, commentText);
-    console.log(`[BOT]   :: COMMENTARY    :: ${commentText}`);
   } catch (error: unknown) {
     const err = error as Error;
     console.error(`[IoT]   :: TELEMETRY_ERR ::`, err);
