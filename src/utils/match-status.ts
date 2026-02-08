@@ -7,7 +7,7 @@
  * =====================================================================
  */
 import { MATCH_STATUS } from "../validation/matches.ts";
-import type { Match, MatchStatus } from "../types/matches.types.ts";
+import type { Match, MatchStatus } from "../types/db.types.ts";
 
 /**
  * ◼️ CALCULATE_STATUS

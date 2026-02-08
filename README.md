@@ -20,21 +20,12 @@
 
 ---
 
-### 00 __ VISTA PREVIA
+### 00 __ OVERVIEW
 
-> **ABSTRACT:** Sistema de backend de alto rendimiento para la gestión y transmisión de eventos deportivos en tiempo real. Orquestación nativa de WebSockets sobre Bun con validación estricta y limitación de velocidad serverless.
->
-> <br />
+> **ABSTRACT:** Backend especializado para la gestión y arbitraje de partidos de **Pádel** en tiempo real. Incluye un motor de puntuación completo (Sets, Tie-breaks, Puntos de Oro), telemetría IoT y narración automática distribuida vía WebSockets.
 >
 > **ESTADO:** ⚠️ EN DESARROLLO PERO FUNCIONAL.
->
-> <br />
->
->
-> **ORIGIN:** Based on the [WebSockets Crash Course](https://www.youtube.com/watch?v=pbOXOY78dNA) by [JavaScript Mastery](https://www.youtube.com/@javascriptmastery).
-> *Adapted to Bun + Hono ecosystem with extensive educational comments.*
-> <br />
-> <br />
+
 
 ---
 
@@ -48,6 +39,38 @@
 | **Database** | `Neon (Postgres)` | Serverless SQL para escalabilidad automática |
 | **ORM** | `Drizzle` | Introspección de esquema y consultas type-safe |
 | **Protection** | `Upstash Redis` | Rate Limiting distribuido (Sliding Window) |
+
+#### 🏗️ Diagrama de Arquitectura
+
+```mermaid
+graph TB
+    subgraph Clients
+        WEB[Web App]
+        IOT[Cámaras/IoT]
+    end
+
+    subgraph Server["Bun Server"]
+        HONO[Hono Router]
+        WS[WebSocket Server]
+        CTRL[Controllers]
+        ENGINE[PadelEngine]
+    end
+
+    subgraph Storage
+        PG[(PostgreSQL)]
+        REDIS[(Upstash Redis)]
+    end
+
+    WEB --HTTP--> HONO
+    WEB --WS--> WS
+    IOT --WS--> WS
+    HONO --> CTRL
+    WS --> CTRL
+    CTRL --> ENGINE
+    CTRL --> PG
+    HONO --> REDIS
+```
+
 
 <br>
 
@@ -96,8 +119,54 @@ PORT=8000
 HOST='0.0.0.0'
 ```
 
-> [!CAUTION]
 > **SEGURIDAD:** Mantén tus secretos seguros. El archivo `.env` contiene credenciales sensibles y **NUNCA** debe ser incluido en el control de versiones (Git).
+
+### 02.2 __ MODELO DE DATOS
+
+```mermaid
+erDiagram
+    players ||--o{ matches : "plays in"
+    players ||--o{ match_stats : "has stats"
+    players ||--o{ point_history : "wins points"
+    
+    matches ||--o{ match_stats : "tracks"
+    matches ||--o{ point_history : "logs"
+    matches ||--o{ match_sets : "contains"
+    matches ||--o{ commentary : "has"
+    
+    courts ||--o| matches : "hosts"
+
+    players {
+        int id PK
+        text name
+    }
+
+    matches {
+        int id PK
+        varchar status
+        int pair_a_games
+        int pair_b_games
+        text pair_a_score
+        text pair_b_score
+    }
+
+    match_stats {
+        int id PK
+        int match_id FK
+        int player_id FK
+        int points_won
+    }
+
+    point_history {
+        int id PK
+        int match_id FK
+        text winner_side
+    }
+```
+
+> [!NOTE]
+> *Diagrama simplificado. Ver `docs/CURRENT_STATE_DOCS.md` para el esquema completo.*
+
 
 ### 03 __ CARACTERÍSTICAS CLAVE
 
@@ -105,6 +174,32 @@ HOST='0.0.0.0'
 *   **Resilient Rate Limiting**: Middleware con estrategia "Fail-open" (si Redis cae, el tráfico pasa).
 *   **Domain-Driven Structure**: Organización por módulos (`routes/matches`, `ws/server`) en lugar de capas técnicas puras.
 *   **Strict Typing**: Schema validation con Zod + TypeScript en cada frontera (HTTP & DB).
+
+### 03.1 __ API & WEBSOCKETS
+
+#### 🌐 REST API (Hono)
+
+| Método | Endpoint | Acción |
+| :--- | :--- | :--- |
+| `GET` | `/matches` | Lista de partidos activos |
+| `POST` | `/matches` | Crear nuevo partido |
+| `POST` | `/matches/:id/point` | Registrar punto y actualizar score |
+| `GET` | `/matches/:id/commentary` | Obtener feed de comentarios |
+
+#### ⚡ WebSockets (Bun native)
+
+**Conexión:** `ws://HOST:PORT/ws`
+
+| Evento (C→S) | Descripción |
+| :--- | :--- |
+| `SUBSCRIBE` | Suscribirse a actualizaciones de un partido |
+| `AUTH_DEVICE` | Autenticar cámara/IoT para telemetría |
+| `TELEMETRY_EVENT` | Enviar datos de golpeo (IoT) |
+| `REQUEST_STATS` | Pedir estadísticas bajo demanda |
+
+> [!TIP]
+> Solo los clientes suscritos a un `matchId` reciben los eventos `MATCH_UPDATE` y `COMMENTARY` en tiempo real.
+
 
 A. THE HOOK (RESILIENT MIDDLEWARE)
 Intercepta conexiones WS, valida IP contra Redis Cloud y aplica lógica de fallback si el servicio externo falla.
@@ -159,6 +254,24 @@ El sistema cuenta con una suite de pruebas automatizadas que garantizan la integ
 ```bash
 bun test
 ```
+
+### 05 __ ESTRUCTURA DEL PROYECTO
+
+```text
+src/
+├── index.ts              # Entry point (Hono + Bun.serve)
+├── routes/               # Endpoints REST (HTTP)
+├── ws/                   # Lógica WebSockets (Handlers, Utils)
+├── services/             # Lógica de negocio y persistencia
+├── controllers/          # Orquestación de peticiones
+├── utils/                # Engines (Scoring, CommentaryBot)
+├── db/                   # Esquema Drizzle y conexión
+├── types/                # Tipos TS centralizados
+└── validation/           # Esquemas Zod (Validación estricta)
+```
+
+> [!NOTE]
+> *Consultar `docs/CURRENT_STATE_DOCS.md` para un desglose detallado de cada archivo.*
 
 <div align="center">
 <br />
