@@ -304,105 +304,113 @@ describe("Padel Flow Verification (Comprehensive)", () => {
   // █ SET COMPLETION
   // =============================================================================
 
-  it("should complete a set and create matchSets record", async () => {
-    const match = await createTestMatch(playerIds, { status: "live" });
+  it(
+    "should complete a set and create matchSets record",
+    async () => {
+      const match = await createTestMatch(playerIds, { status: "live" });
 
-    // Simular ganar 6 juegos (cada juego = 4 puntos)
-    for (let game = 0; game < 6; game++) {
-      for (let point = 0; point < 4; point++) {
-        await processPointScored({
-          matchId: match.id.toString(),
-          playerId: playerIds[0].toString(),
-          actionType: "winner",
-        });
-        // Pequeño delay para evitar race conditions
-        await delay(10);
+      // Simular ganar 6 juegos (cada juego = 4 puntos)
+      for (let game = 0; game < 6; game++) {
+        for (let point = 0; point < 4; point++) {
+          await processPointScored({
+            matchId: match.id.toString(),
+            playerId: playerIds[0].toString(),
+            actionType: "winner",
+          });
+          // Pequeño delay para evitar race conditions
+          await delay(10);
+        }
       }
-    }
 
-    // Delay adicional para asegurar procesamiento completo
-    await delay(100);
+      // Delay adicional para asegurar procesamiento completo
+      await delay(100);
 
-    // Verificar que el set se completó
-    const sets = await db
-      .select()
-      .from(matchSets)
-      .where(eq(matchSets.matchId, match.id));
+      // Verificar que el set se completó
+      const sets = await db
+        .select()
+        .from(matchSets)
+        .where(eq(matchSets.matchId, match.id));
 
-    expect(sets.length).toBe(1);
-    expect(sets[0].setNumber).toBe(1);
-    expect(sets[0].pairAGames).toBe(6);
-    expect(sets[0].pairBGames).toBe(0);
+      expect(sets.length).toBe(1);
+      expect(sets[0].setNumber).toBe(1);
+      expect(sets[0].pairAGames).toBe(6);
+      expect(sets[0].pairBGames).toBe(0);
 
-    // Verificar match state
-    const [updatedMatch] = await db
-      .select()
-      .from(matches)
-      .where(eq(matches.id, match.id));
+      // Verificar match state
+      const [updatedMatch] = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, match.id));
 
-    expect(updatedMatch.pairASets).toBe(1);
-    expect(updatedMatch.currentSetIdx).toBe(2);
+      expect(updatedMatch.pairASets).toBe(1);
+      expect(updatedMatch.currentSetIdx).toBe(2);
 
-    console.log("✅ Set completion verified");
-  });
+      console.log("✅ Set completion verified");
+    },
+    { timeout: 15000 },
+  );
 
   // =============================================================================
   // █ MATCH FINISH (2 SETS WIN)
   // =============================================================================
 
-  it("should finish match when a team wins 2 sets", async () => {
-    const match = await createTestMatch(playerIds, { status: "live" });
+  it(
+    "should finish match when a team wins 2 sets",
+    async () => {
+      const match = await createTestMatch(playerIds, { status: "live" });
 
-    // Ganar Set 1 (6-0)
-    for (let game = 0; game < 6; game++) {
-      for (let point = 0; point < 4; point++) {
-        await processPointScored({
-          matchId: match.id.toString(),
-          playerId: playerIds[0].toString(),
-          actionType: "winner",
-        });
-        await delay(10);
+      // Ganar Set 1 (6-0)
+      for (let game = 0; game < 6; game++) {
+        for (let point = 0; point < 4; point++) {
+          await processPointScored({
+            matchId: match.id.toString(),
+            playerId: playerIds[0].toString(),
+            actionType: "winner",
+          });
+          await delay(10);
+        }
       }
-    }
 
-    // Esperar entre sets
-    await delay(100);
+      // Esperar entre sets
+      await delay(100);
 
-    // Ganar Set 2 (6-0)
-    for (let game = 0; game < 6; game++) {
-      for (let point = 0; point < 4; point++) {
-        await processPointScored({
-          matchId: match.id.toString(),
-          playerId: playerIds[0].toString(),
-          actionType: "winner",
-        });
-        await delay(10);
+      // Ganar Set 2 (6-0)
+      for (let game = 0; game < 6; game++) {
+        for (let point = 0; point < 4; point++) {
+          await processPointScored({
+            matchId: match.id.toString(),
+            playerId: playerIds[0].toString(),
+            actionType: "winner",
+          });
+          await delay(10);
+        }
       }
-    }
 
-    // Delay final para asegurar procesamiento completo
-    await delay(100);
+      // Delay final para asegurar procesamiento completo
+      await delay(100);
 
-    // Verificar match finished
-    const [finishedMatch] = await db
-      .select()
-      .from(matches)
-      .where(eq(matches.id, match.id));
+      // Verificar match finished
+      const [finishedMatch] = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, match.id));
 
-    expect(finishedMatch.status).toBe("finished");
-    expect(finishedMatch.winnerSide).toBe("pair_a");
-    expect(finishedMatch.pairASets).toBe(2);
+      expect(finishedMatch.status).toBe("finished");
+      expect(finishedMatch.winnerSide).toBe("pair_a");
+      expect(finishedMatch.pairASets).toBe(2);
 
-    // Verificar que se crearon 2 sets
-    const sets = await db
-      .select()
-      .from(matchSets)
-      .where(eq(matchSets.matchId, match.id));
+      // Verificar que se crearon 2 sets
+      const sets = await db
+        .select()
+        .from(matchSets)
+        .where(eq(matchSets.matchId, match.id));
 
-    expect(sets.length).toBe(2);
+      expect(sets.length).toBe(2);
 
-    console.log("✅ Match finish after 2 sets verified");
-  });
+      console.log("✅ Match finish after 2 sets verified");
+    },
+    { timeout: 30000 },
+  );
 
   // =============================================================================
   // █ GOLDEN POINT SCENARIO

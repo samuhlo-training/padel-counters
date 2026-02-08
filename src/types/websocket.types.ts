@@ -45,9 +45,9 @@ export type ClientMessage =
       type: "TELEMETRY_EVENT";
       payload: {
         playerId: string;
-        stroke?: string;
+        stroke?: import("./padel.types.ts").PadelStroke;
         speed?: number;
-        method?: string; // "winner", "error", etc.
+        method?: import("./padel.types.ts").PointMethod;
         isNetPoint?: boolean;
       };
     };

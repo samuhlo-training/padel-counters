@@ -1,94 +1,84 @@
 /**
  * █ [DOMAIN] :: PADEL_TYPES
  * =====================================================================
- * DESC:   Tipos de dominio para la lógica de Padel (Score, State, Entities).
+ * DESC:   Tipos de dominio para la lógica de Padel (Score, State).
+ *         Los tipos base (Player, Match, Enums) vienen de db.types.ts.
  * STATUS: GOLD MASTER
  * =====================================================================
  */
+import type { PointMethod, PadelStroke, MatchStatus } from "./db.types.ts";
+
+// Re-export para conveniencia
+export type { PointMethod, PadelStroke };
 
 // =============================================================================
 // █ SCORING TYPES
 // =============================================================================
-// [CORE] -> La puntuación en pádel es no-lineal (15, 30, 40).
+
+/** Puntuación estándar de pádel (no-lineal: 0, 15, 30, 40, AD) */
 export type PadelPoint = "0" | "15" | "30" | "40" | "AD";
+
+/** Puntuación en tie-break (numérica: 0, 1, 2...) */
 export type TieBreakPoint = number;
-
-export type PadelStroke =
-  | "forehand"
-  | "backhand"
-  | "smash"
-  | "bandeja"
-  | "vibora"
-  | "volley_forehand"
-  | "volley_backhand"
-  | "lob"
-  | "drop_shot"
-  | "wall_boast";
-
-export type PointMethod =
-  | "winner"
-  | "unforced_error"
-  | "forced_error"
-  | "service_ace"
-  | "double_fault";
 
 // =============================================================================
 // █ STATE SNAPSHOT
 // =============================================================================
-// DESC: Representación completa del estado de un partido en un instante T.
-// [DB] -> Coincide con la estructura de la tabla 'matches'.
+
+/**
+ * [SNAPSHOT] -> Representación completa del estado de un partido en un instante T.
+ * Usado para broadcasting WebSocket y lógica de scoring.
+ */
 export interface MatchSnapshot {
   id: number;
   pairAName: string;
   pairBName: string;
 
   // -- SCORE --
-  pairAScore: string; // "0", "15", "40", "AD", o "7" (en tiebreak)
+  pairAScore: string;
   pairBScore: string;
   pairAGames: number;
   pairBGames: number;
   pairASets: number;
   pairBSets: number;
-  currentSetIdx: number; // 1, 2, 3
+  currentSetIdx: number;
 
   // -- FLAGS --
   isTieBreak: boolean;
-  hasGoldPoint: boolean; // ¿Se juega con Punto de Oro?
+  hasGoldPoint: boolean;
 
   // -- STATUS --
-  winnerSide?: "pair_a" | "pair_b" | null; // null si sigue vivo
+  winnerSide?: "pair_a" | "pair_b" | null;
   servingPlayerId?: number | null;
-  status: "scheduled" | "warmup" | "live" | "finished" | "canceled";
+  status: MatchStatus;
 }
 
 // =============================================================================
 // █ RULE ENGINE OUTPUT
 // =============================================================================
-// DESC: Resultado atómico de procesar un punto.
-// [RETURN] -> Retorna el Siguiente Estado, Historia y Eventos (Set ganado).
+
+/**
+ * [OUTPUT] -> Resultado atómico de procesar un punto.
+ * Retorna: Siguiente Estado + Historia + Eventos (Set ganado).
+ */
 export interface PointOutcome {
-  // [NEW STATE] -> Estado mutado para persistir en 'matches'
   nextSnapshot: MatchSnapshot;
 
-  // [HISTORY] -> Datos para insertar en 'point_history'
   history: {
     setNumber: number;
     gameNumber: number;
-    pointNumber: number; // Calculado por DB/Controller
+    pointNumber: number;
     winnerSide: "pair_a" | "pair_b";
     method: PointMethod;
     stroke?: PadelStroke;
     isNetPoint?: boolean;
     scoreAfterPairA: string;
     scoreAfterPairB: string;
-
-    // [DERIVED] -> Flags calculados pre/post punto
     isGamePoint: boolean;
     isSetPoint: boolean;
     isMatchPoint: boolean;
   };
 
-  // [EVENT] -> Solo presente si este punto cerró un set
   setCompleted?: {
     setNumber: number;
     pairAGames: number;
@@ -99,25 +89,16 @@ export interface PointOutcome {
 }
 
 // =============================================================================
-// █ ENTITIES
-// =============================================================================
-export interface Player {
-  id: number;
-  name: string;
-}
-
-// =============================================================================
 // █ TELEMETRY (COMMENTARY BOT)
 // =============================================================================
 
 /**
  * [DTO] -> Datos de telemetría para generar comentarios automáticos.
- * Recibe datos de sensores IoT y genera narrativa.
  */
 export interface TelemetryData {
   playerName: string;
   method?: PointMethod;
   stroke?: PadelStroke;
-  speed?: number; // km/h
+  speed?: number;
   isNetPoint?: boolean;
 }
