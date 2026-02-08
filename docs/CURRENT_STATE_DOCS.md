@@ -52,8 +52,8 @@ graph TB
 
 | Prefijo | Archivo | Descripción |
 |:--|:--|:--|
-| `/matches` | [matches.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/routes/matches.ts) | CRUD de partidos |
-| `/matches/:id/commentary` | [commentary.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/routes/commentary.ts) | Feed minuto a minuto |
+| `/matches` | [matches.ts](../src/routes/matches.ts) | CRUD de partidos |
+| `/matches/:id/commentary` | [commentary.ts](../src/routes/commentary.ts) | Feed minuto a minuto |
 
 ### Endpoints
 
@@ -107,10 +107,10 @@ flowchart LR
 
 | Tipo | Payload | Handler | Acción |
 |:--|:--|:--|:--|
-| `SUBSCRIBE` | `{matchId: string}` | [subscription.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/ws/handlers/subscription.ts) | Suscribe al topic + envía snapshot inicial |
+| `SUBSCRIBE` | `{matchId: string}` | [subscription.ts](../src/ws/handlers/subscription.ts) | Suscribe al topic + envía snapshot inicial |
 | `UNSUBSCRIBE` | `{matchId: string}` | subscription.ts | Desuscribe del topic |
-| `REQUEST_STATS` | `{matchId, subtype: "PLAYER" | "MATCH_SUMMARY", playerId?}` | [stats.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/ws/handlers/stats.ts) | Query a DB y respuesta directa |
-| `AUTH_DEVICE` | `{token: string}` | [iot.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/ws/handlers/iot.ts) | Valida token vs `courts.authToken`, marca socket como dispositivo |
+| `REQUEST_STATS` | `{matchId, subtype: "PLAYER" | "MATCH_SUMMARY", playerId?}` | [stats.ts](../src/ws/handlers/stats.ts) | Query a DB y respuesta directa |
+| `AUTH_DEVICE` | `{token: string}` | [iot.ts](../src/ws/handlers/iot.ts) | Valida token vs `courts.authToken`, marca socket como dispositivo |
 | `TELEMETRY_EVENT` | `{playerId, stroke, speed, method, isNetPoint}` | iot.ts | Procesa punto + genera comentario automático |
 
 ---
@@ -259,9 +259,9 @@ sequenceDiagram
 
 | Paso | Código | Archivo |
 |:--|:--|:--|
-| 1. Cliente envía `SUBSCRIBE` | `socket.subscribe(matchId)` | [subscription.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/ws/handlers/subscription.ts#L45) |
-| 2. Comentario se guarda en DB | `INSERT INTO commentary` | [matchService.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/services/matchService.ts#L329-338) |
-| 3. Broadcast al topic | `server.publish(matchId, ...)` | [utils.ts](file:///Users/samu/Documents/03_Educacion/Estudios/PROGRAMACION/WEBSOCKETS/sport-counters/src/ws/utils.ts#L71) |
+| 1. Cliente envía `SUBSCRIBE` | `socket.subscribe(matchId)` | [subscription.ts](../src/ws/handlers/subscription.ts#L45) |
+| 2. Comentario se guarda en DB | `INSERT INTO commentary` | [matchService.ts](../src/services/matchService.ts#L329-338) |
+| 3. Broadcast al topic | `server.publish(matchId, ...)` | [utils.ts](../src/ws/utils.ts#L71) |
 | 4. Solo suscritos reciben | Filtrado automático por Bun | Runtime nativo |
 
 **Orígenes del broadcast:**
