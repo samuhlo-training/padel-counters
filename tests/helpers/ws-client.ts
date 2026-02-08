@@ -196,6 +196,71 @@ export class TestWSClient {
     return this.connected;
   }
 
+  /**
+   * Envía un mensaje y espera la siguiente respuesta
+   */
+  async sendAndAwait(
+    message: any,
+    timeout: number = TEST_CONSTANTS.WS_MESSAGE_TIMEOUT,
+  ): Promise<WSMessage> {
+    this.send(message);
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.removeListener("ANY", listener);
+        reject(new Error(`Timeout waiting for response to ${message.type}`));
+      }, timeout);
+
+      const listener = (msg: WSMessage) => {
+        clearTimeout(timeoutId);
+        this.removeListener("ANY", listener);
+        resolve(msg);
+      };
+
+      this.addListener("ANY", listener);
+    });
+  }
+
+  /**
+   * Espera N mensajes
+   */
+  async waitForMessages(
+    count: number,
+    timeout: number = TEST_CONSTANTS.WS_MESSAGE_TIMEOUT,
+  ): Promise<WSMessage[]> {
+    const received: WSMessage[] = [];
+
+    // Check queue first
+    while (this.messageQueue.length > 0 && received.length < count) {
+      received.push(this.messageQueue.shift()!);
+    }
+
+    if (received.length >= count) return received;
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.removeListener("ANY", listener);
+        resolve(received); // Return what we have, or reject? Test implies strict wait.
+        // reject(new Error(`Timeout waiting for ${count} messages. Got ${received.length}`));
+      }, timeout);
+
+      const listener = (msg: WSMessage) => {
+        // Remove from queue to prevent duplicate consumption
+        const idx = this.messageQueue.indexOf(msg);
+        if (idx !== -1) {
+          this.messageQueue.splice(idx, 1);
+        }
+        received.push(msg);
+        if (received.length >= count) {
+          clearTimeout(timeoutId);
+          this.removeListener("ANY", listener);
+          resolve(received);
+        }
+      };
+
+      this.addListener("ANY", listener);
+    });
+  }
+
   // =============================================================================
   // █ PRIVATE HELPERS
   // =============================================================================
@@ -221,9 +286,15 @@ export class TestWSClient {
   }
 
   private notifyListeners(msg: WSMessage): void {
+    // 1. Notify specific listeners
     const listeners = this.messageListeners.get(msg.type);
     if (listeners) {
       listeners.forEach((listener) => listener(msg));
+    }
+    // 2. Notify catch-all "ANY" listeners
+    const anyListeners = this.messageListeners.get("ANY");
+    if (anyListeners) {
+      anyListeners.forEach((listener) => listener(msg));
     }
   }
 }

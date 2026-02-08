@@ -95,6 +95,9 @@ export const matches = pgTable(
     // Estado
     status: matchStatusEnum("status").default("scheduled").notNull(),
 
+    // Relación con Pistas (Courts) - FK manejado en relations para evitar referencia circular
+    courtId: integer("court_id"),
+
     // Marcador Actual (La foto del momento)
     currentSetIdx: integer("current_set_idx").default(1),
     pairAGames: integer("pair_a_games").default(0),
@@ -117,6 +120,15 @@ export const matches = pgTable(
     // Índices...
   }),
 );
+
+// 3. COURTS (Pistas Físicas / Dispositivos)
+export const courts = pgTable("courts", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(), // Ej: "Pista Central"
+  authToken: text("auth_token").notNull().unique(), // Token para la cámara/mini-pc
+  activeMatchId: integer("active_match_id"), // FK a matches.id - circular, manejado en relations
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // =============================================================================
 // █ TABLAS DE DETALLE (LÓGICA Y COMENTARIOS)
@@ -245,6 +257,14 @@ export const pointHistoryRelations = relations(pointHistory, ({ one }) => ({
 export const commentaryRelations = relations(commentary, ({ one }) => ({
   match: one(matches, {
     fields: [commentary.matchId],
+    references: [matches.id],
+  }),
+}));
+
+// Relaciones para romper la referencia circular matches <-> courts
+export const courtsRelations = relations(courts, ({ one }) => ({
+  activeMatch: one(matches, {
+    fields: [courts.activeMatchId],
     references: [matches.id],
   }),
 }));

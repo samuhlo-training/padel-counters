@@ -9,52 +9,23 @@
 import type { ServerWebSocket, Server } from "bun";
 import { processPointScored, getMatchSnapshot } from "../controllers/match.ts";
 import { db } from "../db/db.ts";
-import { matches, matchStats, players } from "../db/schema.ts";
+import {
+  matches,
+  matchStats,
+  players,
+  courts,
+  commentary,
+} from "../db/schema.ts";
 import { eq, and } from "drizzle-orm";
+import { generateAutomatedComment } from "../utils/commentaryBot.ts";
+import type {
+  WebSocketData,
+  ClientMessage,
+  ServerMessage,
+} from "../types/index.ts";
 
-export type WebSocketData = {
-  createdAt?: number;
-  channelId?: string;
-};
-
-// =============================================================================
-// █ TYPES: MESSAGING PROTOCOL
-// =============================================================================
-
-// [CLIENT -> SERVER]
-// Tipos de mensajes que aceptamos del frontend.
-export type ClientMessage =
-  | { type: "SUBSCRIBE"; matchId: string }
-  | { type: "UNSUBSCRIBE"; matchId: string }
-  | {
-      type: "REQUEST_STATS";
-      matchId: string;
-      subtype: "PLAYER" | "MATCH_SUMMARY";
-      playerId?: string; // Requerido solo si subtype es PLAYER
-    };
-
-// [SERVER -> CLIENT]
-// Respuestas y eventos que emitimos.
-export type ServerMessage =
-  | { type: "WELCOME"; payload: string }
-  | { type: "ERROR"; payload: string }
-  | { type: "SUBSCRIBED"; payload: string }
-  | { type: "UNSUBSCRIBED"; payload: string }
-  | {
-      type: "MATCH_UPDATE";
-      matchId: string;
-      timestamp: number;
-      snapshot: any;
-      lastPoint: any;
-    }
-  | { type: "COMMENTARY"; data: any }
-  | { type: "MATCH_CREATED"; data: any }
-  | {
-      type: "STATS_RESPONSE";
-      subtype: "PLAYER" | "MATCH_SUMMARY";
-      matchId: string;
-      data: any;
-    };
+// Re-export para compatibilidad con código existente
+export type { WebSocketData, ClientMessage, ServerMessage };
 
 // =============================================================================
 // █ HANDLERS: SOCKET EVENTS
@@ -137,17 +108,6 @@ function cleanUpMatchSubscriptions(socket: ServerWebSocket<WebSocketData>) {
   for (const [matchId, sockets] of matchSubscribers.entries()) {
     if (sockets.has(socket)) {
       unsubscribeFromMatch(matchId, socket);
-    }
-  }
-}
-
-async function broadcastToMatch(matchId: string, payload: ServerMessage) {
-  const subscribers = matchSubscribers.get(matchId);
-  if (!subscribers || subscribers.size === 0) return;
-  const message = JSON.stringify(payload);
-  for (const client of subscribers) {
-    if (typeof client.send === "function") {
-      client.send(message);
     }
   }
 }
@@ -249,6 +209,138 @@ async function processStatsRequest(
 }
 
 /**
+ * ◼️ FUNCTION: HANDLE_DEVICE_AUTH
+ * ---------------------------------------------------------
+ * Autentica un dispositivo IoT (Cámara/Mini-PC) mediante token.
+ */
+async function handleDeviceAuth(
+  socket: ServerWebSocket<WebSocketData>,
+  payload: ClientMessage & { type: "AUTH_DEVICE" },
+) {
+  const { token } = payload;
+  console.log(
+    `[IoT]   :: AUTH_ATTEMPT  :: token_preview: ${token.slice(0, 6)}...`,
+  );
+
+  try {
+    const [court] = await db
+      .select()
+      .from(courts)
+      .where(eq(courts.authToken, token));
+
+    if (!court) {
+      console.warn(`[IoT]   :: AUTH_FAIL     :: Invalid Token`);
+      sendJson(socket, { type: "ERROR", payload: "Invalid Auth Token" });
+      return;
+    }
+
+    // [SUCCESS] -> Upgrade socket state
+    socket.data.isDevice = true;
+    socket.data.courtId = court.id;
+
+    console.log(
+      `[IoT]   :: AUTH_SUCCESS  :: Court: ${court.name} (${court.id})`,
+    );
+    sendJson(socket, { type: "AUTH_SUCCESS", courtName: court.name });
+  } catch (error: any) {
+    console.error(`[IoT]   :: AUTH_ERR      ::`, error);
+    sendJson(socket, {
+      type: "ERROR",
+      payload: "Authentication process failed",
+    });
+  }
+}
+
+/**
+ * ◼️ FUNCTION: HANDLE_TELEMETRY_EVENT
+ * ---------------------------------------------------------
+ * Procesa datos de sensores/cámaras, aplica reglas y genera comentarios.
+ */
+async function handleTelemetryEvent(
+  socket: ServerWebSocket<WebSocketData>,
+  payload: ClientMessage & { type: "TELEMETRY_EVENT" },
+) {
+  // 1. SECURITY CHECK
+  if (!socket.data.isDevice || !socket.data.courtId) {
+    console.warn(`[IoT]   :: UNAUTHORIZED  :: Telemetry rejected`);
+    sendJson(socket, { type: "ERROR", payload: "Unauthorized Device" });
+    return;
+  }
+
+  const { playerId, stroke, speed, method, isNetPoint } = payload.payload;
+  console.log(
+    `[IoT]   :: TELEMETRY     :: Court ${socket.data.courtId} | Player ${playerId} | ${method}`,
+  );
+
+  try {
+    // 2. FIND ACTIVE MATCH
+    const [court] = await db
+      .select()
+      .from(courts)
+      .where(eq(courts.id, socket.data.courtId));
+
+    if (!court || !court.activeMatchId) {
+      console.warn(
+        `[IoT]   :: NO_ACTIVE_MATCH :: Court ${socket.data.courtId} idle`,
+      );
+      sendJson(socket, {
+        type: "ERROR",
+        payload: "No active match on this court",
+      });
+      return;
+    }
+
+    const matchId = String(court.activeMatchId);
+
+    // 3. PROCESS GAME RULES (Controller)
+    // Se asume que payload.method mapea a PointMethod (winner, unforced_error...)
+    await processPointScored({
+      matchId,
+      playerId,
+      actionType: method as any, // Type casting simple para MVP
+      stroke: stroke as any,
+      isNetPoint,
+    });
+
+    // 4. AUTOMATED COMMENTARY
+    // Resolver nombre de jugador para el comentario
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(eq(players.id, parseInt(playerId)));
+
+    const playerName = player ? player.name : `Jugador ${playerId}`;
+
+    const commentText = generateAutomatedComment({
+      playerName,
+      method: method as any,
+      stroke: stroke as any,
+      speed,
+      isNetPoint,
+    });
+
+    // 5. SAVE & BROADCAST COMMENTARY
+    const [savedComment] = await db
+      .insert(commentary)
+      .values({
+        matchId: parseInt(matchId),
+        message: commentText,
+        // tags: ["automated", "iot", method || "info"]
+      })
+      .returning();
+
+    await broadcastCommentary(matchId, savedComment);
+    console.log(`[BOT]   :: COMMENTARY    :: ${commentText}`);
+  } catch (error: any) {
+    console.error(`[IoT]   :: TELEMETRY_ERR ::`, error);
+    sendJson(socket, {
+      type: "ERROR",
+      payload: `Telemetry Error: ${error.message}`,
+    });
+  }
+}
+
+/**
  * ◼️ ROUTER: HANDLE_MATCH_MESSAGE
  * ---------------------------------------------------------
  * Enruta los mensajes entrantes según su 'type'.
@@ -327,6 +419,18 @@ function handleMatchMessage(
     });
     return;
   }
+
+  // 4. DEVICE AUTH
+  if (message.type === "AUTH_DEVICE") {
+    handleDeviceAuth(socket, message);
+    return;
+  }
+
+  // 5. TELEMETRY EVENT
+  if (message.type === "TELEMETRY_EVENT") {
+    handleTelemetryEvent(socket, message);
+    return;
+  }
 }
 
 // =============================================================================
@@ -346,6 +450,13 @@ export async function broadcastToAll(
   } catch (err) {
     console.error(`[WS]    :: BROADCAST_ERR :: topic: ${topic}`, err);
   }
+}
+
+export async function broadcastToMatch(
+  matchId: string,
+  payload: any,
+): Promise<void> {
+  await broadcastToAll(matchId, payload);
 }
 
 // =============================================================================

@@ -105,3 +105,19 @@ export interface Player {
   id: number;
   name: string;
 }
+
+// =============================================================================
+// █ TELEMETRY (COMMENTARY BOT)
+// =============================================================================
+
+/**
+ * [DTO] -> Datos de telemetría para generar comentarios automáticos.
+ * Recibe datos de sensores IoT y genera narrativa.
+ */
+export interface TelemetryData {
+  playerName: string;
+  method?: PointMethod;
+  stroke?: PadelStroke;
+  speed?: number; // km/h
+  isNetPoint?: boolean;
+}

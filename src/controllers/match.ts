@@ -14,7 +14,7 @@ import type {
   MatchSnapshot,
   PointMethod,
   PadelStroke,
-} from "../types/padel.ts";
+} from "../types/padel.types.ts";
 import { broadcastToAll } from "../ws/server.ts";
 
 // Mock alias para cumplir con la firma requerida (aunque broadcastToAll es la fn real)

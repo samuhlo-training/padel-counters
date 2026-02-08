@@ -11,7 +11,7 @@ import type {
   MatchSnapshot,
   PointOutcome,
   PointMethod,
-} from "../types/padel.ts";
+} from "../types/padel.types.ts";
 
 export class PadelEngine {
   /**
@@ -34,7 +34,7 @@ export class PadelEngine {
     winnerSide: "pair_a" | "pair_b",
     method: PointMethod,
     // [METADATA] -> Pasamanos para el historial
-    stroke?: import("../types/padel.ts").PadelStroke,
+    stroke?: import("../types/padel.types.ts").PadelStroke,
     isNetPoint?: boolean,
   ): PointOutcome {
     // 1. INMUTABILIDAD -> Deep Copy (o al menos shallow suficiente)
