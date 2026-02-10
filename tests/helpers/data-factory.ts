@@ -2,6 +2,7 @@
  * █ [TEST HELPERS] :: DATA_FACTORY
  * =====================================================================
  * DESC:   Factory para generar datos de prueba reutilizables
+ * STATUS: STABLE
  * =====================================================================
  */
 // @ts-nocheck
@@ -58,7 +59,7 @@ export interface PointScenario {
 // =============================================================================
 
 /**
- * Crea jugadores de test con nombres únicos basados en timestamp
+ * GENERA: Múltiples jugadores de prueba.
  */
 export async function createTestPlayers(
   count: number = 4,
@@ -72,6 +73,14 @@ export async function createTestPlayers(
   }));
 
   return await db.insert(players).values(playerData).returning();
+}
+
+/**
+ * GENERA: Un único jugador de prueba.
+ */
+export async function createTestPlayer(prefix: string = "Player") {
+  const [player] = await createTestPlayers(1, prefix);
+  return player;
 }
 
 // =============================================================================

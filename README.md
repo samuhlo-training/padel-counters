@@ -185,6 +185,7 @@ erDiagram
 | `POST` | `/matches` | Crear nuevo partido |
 | `POST` | `/matches/:id/point` | Registrar punto y actualizar score |
 | `GET` | `/matches/:id/commentary` | Obtener feed de comentarios |
+| `GET` | `/courts` | Consultar estado de pistas (Libre/Ocupada) |
 
 #### ⚡ WebSockets (Bun native)
 

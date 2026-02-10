@@ -54,6 +54,7 @@ graph TB
 |:--|:--|:--|
 | `/matches` | [matches.ts](../src/routes/matches.ts) | CRUD de partidos |
 | `/matches/:id/commentary` | [commentary.ts](../src/routes/commentary.ts) | Feed minuto a minuto |
+| `/courts` | [courts.ts](../src/routes/courts.ts) | Estado de pistas |
 
 ### Endpoints
 
@@ -65,6 +66,7 @@ graph TB
 | `POST` | `/matches/:id/point` | Registra punto | `matches`, `point_history`, `match_stats`, `match_sets` |
 | `GET` | `/matches/:id/commentary` | Lista comentarios | `commentary` |
 | `POST` | `/matches/:id/commentary` | Crea comentario + broadcast | `commentary` |
+| `GET` | `/courts` | Lista pistas y estado | `courts` |
 
 ---
 

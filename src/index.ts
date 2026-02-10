@@ -16,6 +16,7 @@ import {
   setServerRef,
 } from "./ws/server.ts";
 import { commentaryApp } from "./routes/commentary.ts";
+import { courtsApp } from "./routes/courts.ts";
 
 // =============================================================================
 // █ CONFIG: ENTORNO
@@ -129,6 +130,9 @@ app.use("/ws", async (c, next) => {
 // [RUTAS] -> Montar Sub-Aplicaciones
 app.route("/matches", matchesApp);
 app.route("/matches", commentaryApp);
+app.route("/courts", courtsApp);
+// [EXPLICACIÓN] -> /courts
+// Endpoint independiente para consultar el estado global de las pistas.
 // [EXPLICACIÓN] -> ¿Por qué "/matches" y no "/commentary"?
 // Esto monta las rutas de comentarios bajo "/matches".
 // Resultado final: "/matches/:id/commentary" (Jerarquía RESTful lógica).
