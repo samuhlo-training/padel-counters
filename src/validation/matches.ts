@@ -72,6 +72,7 @@ export const createMatchSchema = z
     pairBPlayer1Id: z.coerce.number().int().positive(),
     pairBPlayer2Id: z.coerce.number().int().positive(),
     hasGoldPoint: z.boolean().default(false), // Modo Punto de Oro (default: clásico con ventajas)
+    courtId: z.coerce.number().int().positive(),
     startTime: isoDateString,
     endTime: isoDateString.optional(),
   })

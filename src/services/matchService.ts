@@ -3,6 +3,13 @@
  * =====================================================================
  * DESC:   Capa de servicio que centraliza toda la lógica de negocio
  *         para partidos. Orquesta DB, Engine y Broadcasting.
+ *
+ *         Responsabilidades:
+ *         - Crear partidos (validar pista, insertar match + stats)
+ *         - Procesar puntos (engine → DB → broadcast)
+ *         - Gestionar estado de pistas (busy/free)
+ *         - Añadir comentarios (DB → broadcast)
+ *
  * STATUS: STABLE
  * =====================================================================
  */
@@ -13,16 +20,17 @@ import {
   pointHistory,
   matchSets,
   commentary,
+  courts,
 } from "../db/schema.ts";
 import { PadelEngine } from "../utils/padelScoring.ts";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type {
   MatchSnapshot,
   PointMethod,
   PadelStroke,
   PointOutcome,
 } from "../types/padel.types.ts";
-import { broadcastToAll, broadcastMatchCreated } from "../ws/utils.ts";
+import { broadcastToAll, broadcastCourtUpdate } from "../ws/utils.ts";
 
 // =============================================================================
 // █ TYPES: SERVICE INPUTS
@@ -41,6 +49,7 @@ export interface AddPointPayload {
 
 /**
  * [DTO] -> Payload para crear un partido.
+ * courtId es obligatorio: toda partida se juega en una pista.
  */
 export interface CreateMatchInput {
   pairAName?: string;
@@ -53,6 +62,35 @@ export interface CreateMatchInput {
   startTime: Date;
   endTime?: Date | null;
   status: "scheduled" | "live" | "finished";
+  courtId: number;
+}
+
+// =============================================================================
+// █ HELPERS (MODULE-PRIVATE)
+// =============================================================================
+
+/**
+ * Construye un MatchSnapshot a partir de una fila de la tabla `matches`.
+ * Centraliza el mapeo para evitar duplicación entre getSnapshot / addPoint.
+ */
+function toSnapshot(row: typeof matches.$inferSelect): MatchSnapshot {
+  return {
+    id: row.id,
+    pairAName: row.pairAName || "Unknown",
+    pairBName: row.pairBName || "Unknown",
+    pairAScore: row.pairAScore || "0",
+    pairBScore: row.pairBScore || "0",
+    pairAGames: row.pairAGames || 0,
+    pairBGames: row.pairBGames || 0,
+    pairASets: row.pairASets || 0,
+    pairBSets: row.pairBSets || 0,
+    currentSetIdx: row.currentSetIdx || 1,
+    isTieBreak: row.isTieBreak || false,
+    hasGoldPoint: row.hasGoldPoint || false,
+    winnerSide: row.winnerSide as "pair_a" | "pair_b" | null,
+    servingPlayerId: row.servingPlayerId,
+    status: row.status,
+  };
 }
 
 // =============================================================================
@@ -79,23 +117,7 @@ export const MatchService = {
       throw new Error(`Match ${matchId} not found`);
     }
 
-    return {
-      id: matchData.id,
-      pairAName: matchData.pairAName || "Unknown",
-      pairBName: matchData.pairBName || "Unknown",
-      pairAScore: matchData.pairAScore || "0",
-      pairBScore: matchData.pairBScore || "0",
-      pairAGames: matchData.pairAGames || 0,
-      pairBGames: matchData.pairBGames || 0,
-      pairASets: matchData.pairASets || 0,
-      pairBSets: matchData.pairBSets || 0,
-      currentSetIdx: matchData.currentSetIdx || 1,
-      isTieBreak: matchData.isTieBreak || false,
-      hasGoldPoint: matchData.hasGoldPoint || false,
-      winnerSide: matchData.winnerSide as "pair_a" | "pair_b" | null,
-      servingPlayerId: matchData.servingPlayerId,
-      status: matchData.status,
-    };
+    return toSnapshot(matchData);
   },
 
   // ===========================================================================
@@ -106,10 +128,11 @@ export const MatchService = {
    * ◼️ FUNCTION: ADD_POINT
    * ---------------------------------------------------------
    * [CORE] -> Procesa un punto y orquesta todo el ciclo:
-   * 1. Fetch estado actual
-   * 2. Calcular siguiente estado (PadelEngine)
-   * 3. Transacción atómica (DB)
-   * 4. Broadcast a clientes (WS)
+   *   1. Fetch estado actual del partido
+   *   2. Calcular siguiente estado (PadelEngine — puro, sin IO)
+   *   3. Transacción atómica (point_history + stats + sets + match update)
+   *   4. Liberar pista si el partido ha terminado
+   *   5. Broadcast a clientes (MATCH_UPDATE + COURT_UPDATE si aplica)
    */
   async addPoint(payload: AddPointPayload): Promise<PointOutcome> {
     const { matchId, playerId, actionType, stroke, isNetPoint } = payload;
@@ -120,7 +143,7 @@ export const MatchService = {
       throw new Error(`Invalid matchId or playerId: ${matchId}, ${playerId}`);
     }
 
-    // 1. FETCH MATCH
+    // ── 1. FETCH MATCH ────────────────────────────────────────────────────
     const [matchData] = await db
       .select()
       .from(matches)
@@ -128,28 +151,11 @@ export const MatchService = {
 
     if (!matchData) throw new Error(`Match ${matchId} not found`);
 
+    // Si el partido ya terminó, devolver snapshot actual sin procesar
     if (matchData.status === "finished") {
       console.warn(`[LOGIC] :: IGNORED :: Match ${matchId} is finished`);
-      // Return a dummy outcome that represents no change
-      const dummySnapshot: MatchSnapshot = {
-        id: matchData.id,
-        pairAName: matchData.pairAName || "Unknown",
-        pairBName: matchData.pairBName || "Unknown",
-        pairAScore: matchData.pairAScore || "0",
-        pairBScore: matchData.pairBScore || "0",
-        pairAGames: matchData.pairAGames || 0,
-        pairBGames: matchData.pairBGames || 0,
-        pairASets: matchData.pairASets || 0,
-        pairBSets: matchData.pairBSets || 0,
-        currentSetIdx: matchData.currentSetIdx || 1,
-        isTieBreak: matchData.isTieBreak || false,
-        hasGoldPoint: matchData.hasGoldPoint || false,
-        winnerSide: matchData.winnerSide as "pair_a" | "pair_b" | null,
-        servingPlayerId: matchData.servingPlayerId,
-        status: matchData.status,
-      };
       return {
-        nextSnapshot: dummySnapshot,
+        nextSnapshot: toSnapshot(matchData),
         history: {
           setNumber: 0,
           gameNumber: 0,
@@ -166,7 +172,7 @@ export const MatchService = {
       };
     }
 
-    // 2. DETERMINE SIDES
+    // ── 2. DETERMINE SIDES ────────────────────────────────────────────────
     let playerSide: "pair_a" | "pair_b";
     if (
       playerIdInt === matchData.pairAPlayer1Id ||
@@ -182,6 +188,7 @@ export const MatchService = {
       throw new Error(`Player ${playerId} not in match ${matchId}`);
     }
 
+    // Acciones positivas suman al jugador; negativas suman al contrario
     const isPositiveAction = ["winner", "service_ace"].includes(actionType);
     const scorerSide = isPositiveAction
       ? playerSide
@@ -189,25 +196,8 @@ export const MatchService = {
         ? "pair_b"
         : "pair_a";
 
-    // 3. ENGINE PROCESS (Pure)
-    const currentSnapshot: MatchSnapshot = {
-      id: matchData.id,
-      pairAName: matchData.pairAName || "Unknown",
-      pairBName: matchData.pairBName || "Unknown",
-      pairAScore: matchData.pairAScore || "0",
-      pairBScore: matchData.pairBScore || "0",
-      pairAGames: matchData.pairAGames || 0,
-      pairBGames: matchData.pairBGames || 0,
-      pairASets: matchData.pairASets || 0,
-      pairBSets: matchData.pairBSets || 0,
-      currentSetIdx: matchData.currentSetIdx || 1,
-      isTieBreak: matchData.isTieBreak || false,
-      hasGoldPoint: matchData.hasGoldPoint || false,
-      winnerSide: matchData.winnerSide as "pair_a" | "pair_b" | null,
-      servingPlayerId: matchData.servingPlayerId,
-      status: matchData.status,
-    };
-
+    // ── 3. ENGINE (Pure, sin IO) ──────────────────────────────────────────
+    const currentSnapshot = toSnapshot(matchData);
     const outcome = PadelEngine.processPoint(
       currentSnapshot,
       scorerSide,
@@ -217,16 +207,16 @@ export const MatchService = {
     );
     const { nextSnapshot, history, setCompleted } = outcome;
 
-    // 4. TRANSACTION
+    // ── 4. TRANSACTION (Atómica) ──────────────────────────────────────────
     await db.transaction(async (tx) => {
-      // A. Point History
+      // A. Historial de puntos
       await tx.insert(pointHistory).values({
         matchId: matchIdInt,
         ...history,
         winnerPlayerId: isPositiveAction ? playerIdInt : null,
       });
 
-      // B. Player Stats
+      // B. Estadísticas del jugador
       if (isPositiveAction) {
         await tx.execute(sql`
           UPDATE match_stats SET 
@@ -242,12 +232,11 @@ export const MatchService = {
         `);
       }
 
-      // C. Set Completion
+      // C. Finalización de set
       let finalStatus = nextSnapshot.status;
       let finalWinner = nextSnapshot.winnerSide;
 
       if (setCompleted) {
-        // Increment sets count FIRST
         const setWinner =
           setCompleted.pairAGames > setCompleted.pairBGames
             ? "pair_a"
@@ -256,7 +245,7 @@ export const MatchService = {
         if (setWinner === "pair_a") nextSnapshot.pairASets++;
         else nextSnapshot.pairBSets++;
 
-        // Check for 2-set victory (2-0)
+        // Victoria por 2 sets (2-0 o 2-1)
         if (nextSnapshot.pairASets >= 2) {
           finalWinner = "pair_a";
           finalStatus = "finished";
@@ -269,13 +258,13 @@ export const MatchService = {
           nextSnapshot.winnerSide = "pair_b";
         }
 
-        // THEN save set record to DB
         await tx.insert(matchSets).values({
           matchId: matchIdInt,
           ...setCompleted,
         });
       }
-      // D. Update Match
+
+      // D. Actualizar match (scheduled → live en primer punto)
       if (matchData.status === "scheduled" && finalStatus !== "finished") {
         finalStatus = "live";
       }
@@ -303,9 +292,28 @@ export const MatchService = {
 
       nextSnapshot.status = finalStatus;
       nextSnapshot.winnerSide = finalWinner;
+
+      // E. Liberar pista si el partido ha terminado
+      if (finalStatus === "finished") {
+        await tx
+          .update(courts)
+          .set({ activeMatchId: null })
+          .where(eq(courts.id, matchData.courtId));
+      }
     });
 
-    // 5. BROADCAST
+    // ── 5. BROADCASTS (fuera de la transacción) ───────────────────────────
+
+    // 5a. Notificar pista libre si el partido terminó
+    if (nextSnapshot.status === "finished") {
+      try {
+        await broadcastCourtUpdate(matchData.courtId, "free", null, null);
+      } catch (e) {
+        console.error(`[ERR]   :: COURT_FREE_BCAST_FAIL`, e);
+      }
+    }
+
+    // 5b. Notificar actualización de marcador a suscriptores
     await broadcastToAll(matchId, {
       type: "MATCH_UPDATE",
       matchId,
@@ -324,7 +332,7 @@ export const MatchService = {
   /**
    * ◼️ FUNCTION: ADD_COMMENTARY
    * ---------------------------------------------------------
-   * Guarda un comentario y lo difunde a los suscriptores.
+   * Guarda un comentario y lo difunde a los suscriptores del partido.
    */
   async addCommentary(
     matchId: number,
@@ -355,12 +363,39 @@ export const MatchService = {
   /**
    * ◼️ FUNCTION: CREATE_MATCH
    * ---------------------------------------------------------
-   * Crea un partido con estadísticas iniciales para jugadores.
+   * Crea un partido con estadísticas iniciales para 4 jugadores.
+   *
+   * Flujo:
+   *   1. Verificar que la pista existe y está libre
+   *   2. Transacción: insert match + set court busy + init stats
+   *   3. Broadcast COURT_UPDATE (busy) a todos los clientes
+   *
+   * @throws Error "Court X not found" si la pista no existe
+   * @throws Error "Court X is already occupied" si tiene un match activo
+   * @throws Error "Match requires 4 distinct players" si hay IDs duplicados
    */
   async createMatch(
     data: CreateMatchInput,
   ): Promise<{ id: number; [key: string]: unknown }> {
+    // ── 1. VALIDAR DISPONIBILIDAD DE PISTA ──────────────────────────────
+    const [existingCourt] = await db
+      .select()
+      .from(courts)
+      .where(eq(courts.id, data.courtId));
+
+    if (!existingCourt) {
+      throw new Error(`Court ${data.courtId} not found`);
+    }
+
+    if (existingCourt.activeMatchId) {
+      throw new Error(
+        `Court ${data.courtId} is already occupied by match ${existingCourt.activeMatchId}`,
+      );
+    }
+
+    // ── 2. TRANSACCIÓN: MATCH + COURT + STATS ───────────────────────────
     const newMatch = await db.transaction(async (tx) => {
+      // A. Insertar partido
       const [match] = await tx
         .insert(matches)
         .values({
@@ -381,12 +416,19 @@ export const MatchService = {
           pairAScore: "0",
           pairBScore: "0",
           isTieBreak: false,
+          courtId: data.courtId,
         })
         .returning();
 
       if (!match) throw new Error("Match insert failed");
 
-      // Init stats (deduplicated)
+      // B. Marcar pista como ocupada
+      await tx
+        .update(courts)
+        .set({ activeMatchId: match.id })
+        .where(eq(courts.id, data.courtId));
+
+      // C. Inicializar stats (4 jugadores únicos obligatorios)
       const allPlayerIds = [
         data.pairAPlayer1Id,
         data.pairAPlayer2Id,
@@ -400,28 +442,32 @@ export const MatchService = {
         throw new Error("Match requires 4 distinct players");
       }
 
-      if (uniquePlayerIds.length > 0) {
-        await tx.insert(matchStats).values(
-          uniquePlayerIds.map((playerId) => ({
-            matchId: match.id,
-            playerId,
-            pointsWon: 0,
-            winners: 0,
-            unforcedErrors: 0,
-            smashWinners: 0,
-          })),
-        );
-      }
+      await tx.insert(matchStats).values(
+        uniquePlayerIds.map((playerId) => ({
+          matchId: match.id,
+          playerId,
+          pointsWon: 0,
+          winners: 0,
+          unforcedErrors: 0,
+          smashWinners: 0,
+        })),
+      );
 
       return match;
     });
 
     console.log(`[DB]    ++ SAVED         :: id: ${newMatch.id}`);
 
+    // ── 3. BROADCAST COURT_UPDATE (BUSY) ────────────────────────────────
     try {
-      await broadcastMatchCreated(newMatch);
+      await broadcastCourtUpdate(
+        data.courtId,
+        "busy",
+        newMatch.id,
+        newMatch.startTime,
+      );
     } catch (e) {
-      console.error(`[ERR]   :: BCAST_FAIL    :: match: ${newMatch.id}`, e);
+      console.error(`[ERR]   :: COURT_BCAST_FAIL`, e);
     }
 
     return newMatch;

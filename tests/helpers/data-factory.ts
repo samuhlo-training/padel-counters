@@ -5,13 +5,14 @@
  * STATUS: STABLE
  * =====================================================================
  */
-// @ts-nocheck
+
 import { db } from "../../src/db/db";
 import {
   players,
   matches,
   matchStats,
   pointHistory,
+  courts,
   commentary,
   matchSets,
   type pointMethodEnum,
@@ -84,6 +85,27 @@ export async function createTestPlayer(prefix: string = "Player") {
 }
 
 // =============================================================================
+// █ COURT CREATION
+// =============================================================================
+
+/**
+ * GENERA: Una pista de prueba.
+ */
+export async function createTestCourt(name: string = "Test Court") {
+  const [court] = await db
+    .insert(courts)
+    .values({
+      name,
+      authToken: `auth_token_${Date.now()}_${Math.random()}`,
+    })
+    .returning();
+
+  if (!court) throw new Error("Failed to create test court");
+
+  return court;
+}
+
+// =============================================================================
 // █ MATCH CREATION
 // =============================================================================
 
@@ -95,6 +117,9 @@ export async function createTestMatch(
   options: MatchOptions = {},
 ) {
   const [p1Id, p2Id, p3Id, p4Id] = playerIds;
+
+  // Ensure a court exists
+  const court = await createTestCourt();
 
   const matchData = {
     matchType: options.matchType || "friendly",
@@ -108,9 +133,12 @@ export async function createTestMatch(
     servingPlayerId: options.servingPlayerId || p1Id,
     hasGoldPoint: options.hasGoldPoint ?? false, // Default: modo clásico con ventajas
     startTime: new Date(),
+    courtId: court.id,
   };
 
   const [match] = await db.insert(matches).values(matchData).returning();
+
+  if (!match) throw new Error("Failed to create test match");
 
   // Inicializar stats para todos los jugadores
   await db.insert(matchStats).values([

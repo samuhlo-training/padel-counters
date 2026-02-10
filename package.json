@@ -11,7 +11,9 @@
     "test:watch": "bun test --watch",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:purge": "bun scripts/db_purge.ts"
+    "db:purge": "bun scripts/db_purge.ts",
+    "db:reset": "bun scripts/db_reset.ts",
+    "db:seed": "bun scripts/seed_courts.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

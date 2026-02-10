@@ -25,8 +25,8 @@ export { setServerRef };
 export {
   broadcastToAll,
   broadcastToMatch,
-  broadcastMatchCreated,
   broadcastCommentary,
+  broadcastCourtUpdate,
 } from "./utils.ts";
 
 // =============================================================================

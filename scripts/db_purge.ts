@@ -26,7 +26,8 @@ async function purgeDatabase() {
         match_stats, 
         commentary, 
         matches, 
-        players 
+        players,
+        courts 
       RESTART IDENTITY CASCADE;
     `);
 
@@ -38,6 +39,7 @@ async function purgeDatabase() {
     console.log("   - commentary    [CLEARED]");
     console.log("   - matches       [CLEARED]");
     console.log("   - players       [CLEARED]");
+    console.log("   - courts        [CLEARED]");
   } catch (error) {
     console.error("❌ PURGE FAILED:", error);
     process.exit(1);

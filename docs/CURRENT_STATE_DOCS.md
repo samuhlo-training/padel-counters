@@ -126,8 +126,8 @@ flowchart LR
 | `AUTH_SUCCESS` | `{courtName}` | Autenticación IoT exitosa |
 | `MATCH_UPDATE` | `{matchId, timestamp, snapshot, lastPoint}` | Cada punto o al suscribirse |
 | `COMMENTARY` | `{data: Commentary}` | Nuevo comentario |
-| `MATCH_CREATED` | `{data: Match}` | Nuevo partido (global broadcast) |
 | `STATS_RESPONSE` | `{subtype, matchId, data}` | Respuesta a `REQUEST_STATS` |
+| `COURT_UPDATE` | `{courtId, status, activeMatchId, startTime}` | Cambio de estado de pista (busy/free) |
 | `ERROR` | `string` | Cualquier error |
 
 ---
@@ -139,23 +139,28 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant H as Hono
+    participant H as Hono/MatchService
     participant DB as PostgreSQL
     participant WS as WebSocket
 
     C->>H: POST /matches {body}
     H->>H: Validar (Zod)
-    H->>DB: INSERT matches
-    H->>DB: INSERT match_stats (x4 players)
+    H->>DB: SELECT court (check available)
+    alt Court Occupied
+        H-->>C: 409 Conflict
+    end
+    H->>DB: Transaction: INSERT match + UPDATE court + INSERT stats
     DB-->>H: Match object
-    H->>WS: broadcastMatchCreated()
-    WS-->>C: {type: MATCH_CREATED}
+    H->>WS: broadcastCourtUpdate(busy)
+    WS-->>C: {type: COURT_UPDATE, status: busy, activeMatchId}
     H-->>C: 201 {data: match}
 ```
 
 **Tablas:**
-- `matches` → Nueva fila con marcador inicial (0-0)
+- `courts` → Verificación de disponibilidad (`activeMatchId IS NULL`). Si ocupada → 409.
+- `matches` → Nueva fila con marcador inicial (0-0) y `courtId` asociado
 - `match_stats` → 4 filas (una por jugador) con estadísticas en 0
+- `courts` → Actualiza `activeMatchId` al nuevo `match.id`
 
 ---
 
@@ -185,6 +190,11 @@ sequenceDiagram
     DB-->>CTRL: Commit
     CTRL->>WS: broadcastToMatch(MATCH_UPDATE)
     WS-->>C: {type: MATCH_UPDATE, snapshot}
+    opt Match Finished
+        CTRL->>DB: UPDATE courts SET activeMatchId = NULL
+        CTRL->>WS: broadcastCourtUpdate(free)
+        WS-->>C: {type: COURT_UPDATE, status: free}
+    end
     CTRL-->>H: Success
     H-->>C: 200 {success: true}
 ```
@@ -194,6 +204,7 @@ sequenceDiagram
 - `match_stats` → +1 winner/error según acción
 - `match_sets` → Nueva fila si el set terminó
 - `matches` → Actualización del marcador actual
+- `courts` → `activeMatchId = NULL` si el partido terminó
 
 ---
 

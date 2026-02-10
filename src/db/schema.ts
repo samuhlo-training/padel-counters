@@ -96,7 +96,7 @@ export const matches = pgTable(
     status: matchStatusEnum("status").default("scheduled").notNull(),
 
     // Relación con Pistas (Courts) - FK manejado en relations para evitar referencia circular
-    courtId: integer("court_id"),
+    courtId: integer("court_id").notNull(),
 
     // Marcador Actual (La foto del momento)
     currentSetIdx: integer("current_set_idx").default(1),
