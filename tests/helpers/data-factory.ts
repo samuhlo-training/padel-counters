@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * █ [TEST HELPERS] :: DATA_FACTORY
  * =====================================================================
@@ -30,6 +31,7 @@ export interface MatchOptions {
   status?: "scheduled" | "warmup" | "live" | "finished" | "canceled";
   servingPlayerId?: number;
   hasGoldPoint?: boolean;
+  courtId?: number;
 }
 
 export interface PointScenario {
@@ -119,7 +121,11 @@ export async function createTestMatch(
   const [p1Id, p2Id, p3Id, p4Id] = playerIds;
 
   // Ensure a court exists
-  const court = await createTestCourt();
+  let finalCourtId = options.courtId;
+  if (!finalCourtId) {
+    const court = await createTestCourt();
+    finalCourtId = court.id;
+  }
 
   const matchData = {
     matchType: options.matchType || "friendly",
@@ -133,7 +139,7 @@ export async function createTestMatch(
     servingPlayerId: options.servingPlayerId || p1Id,
     hasGoldPoint: options.hasGoldPoint ?? false, // Default: modo clásico con ventajas
     startTime: new Date(),
-    courtId: court.id,
+    courtId: finalCourtId,
   };
 
   const [match] = await db.insert(matches).values(matchData).returning();

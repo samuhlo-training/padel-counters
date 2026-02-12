@@ -79,4 +79,23 @@ export type ServerMessage =
       subtype: "PLAYER" | "MATCH_SUMMARY";
       matchId: string;
       data: unknown;
+    }
+  | {
+      type: "MATCH_FINISHED";
+      matchId: string;
+      winnerSide: string;
+      finalScore: {
+        sets: Array<{ pairAGames: number; pairBGames: number }>;
+        pairASets: number;
+        pairBSets: number;
+      };
+    }
+  | {
+      type: "COURT_UPDATE";
+      payload: {
+        courtId: number | string;
+        status: "busy" | "free";
+        activeMatchId: number | null;
+        startTime?: Date | string | null;
+      };
     };

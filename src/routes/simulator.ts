@@ -1,5 +1,8 @@
 import { Hono } from "hono";
 import { Simulator } from "../../services/simulator.ts";
+import { db } from "../db/db.ts";
+import { matches } from "../db/schema.ts";
+import { inArray } from "drizzle-orm";
 
 export const simulatorApp = new Hono();
 
@@ -10,6 +13,36 @@ export const simulatorApp = new Hono();
  * STATUS: DEVELOPMENT
  * =====================================================================
  */
+
+/**
+ * GET /simulator/status
+ * Returns active simulations with match details (matchId, courtId, startTime, status).
+ * Allows the frontend to recover state on reload.
+ */
+simulatorApp.get("/status", async (c) => {
+  try {
+    const activeMatchIds = [...Simulator.getActiveMatchIds()];
+
+    if (activeMatchIds.length === 0) {
+      return c.json({ activeSimulations: [] });
+    }
+
+    // Fetch match details for all active simulations in one query
+    const activeMatches = await db
+      .select({
+        matchId: matches.id,
+        courtId: matches.courtId,
+        startTime: matches.startTime,
+        status: matches.status,
+      })
+      .from(matches)
+      .where(inArray(matches.id, activeMatchIds));
+
+    return c.json({ activeSimulations: activeMatches });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 500);
+  }
+});
 
 /**
  * POST /simulator/start
@@ -25,14 +58,13 @@ simulatorApp.post("/start", async (c) => {
       return c.json({ error: "courtId is required" }, 400);
     }
 
-    // Iniciar simulación (async, no esperamos a que termine el partido)
-    Simulator.createAndSimulate(Number(courtId)).catch((err) => {
-      console.error("[SIM] Error en background:", err);
-    });
+    // Await match creation to get the matchId, the simulation loop runs in background via setTimeout
+    const result = await Simulator.createAndSimulate(Number(courtId));
 
     return c.json({
       status: "success",
       message: `Simulation started for court ${courtId}`,
+      matchId: result.matchId,
     });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 500);
@@ -53,7 +85,7 @@ simulatorApp.post("/stop", async (c) => {
       return c.json({ error: "matchId is required" }, 400);
     }
 
-    const stopped = Simulator.stop(Number(matchId));
+    const stopped = await Simulator.stop(Number(matchId));
 
     if (stopped) {
       return c.json({

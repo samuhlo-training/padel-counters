@@ -21,9 +21,10 @@ import {
   matchSets,
   commentary,
   courts,
+  players,
 } from "../db/schema.ts";
 import { PadelEngine } from "../utils/padelScoring.ts";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import type {
   MatchSnapshot,
   PointMethod,
@@ -69,15 +70,103 @@ export interface CreateMatchInput {
 // █ HELPERS (MODULE-PRIVATE)
 // =============================================================================
 
+/** Tipo de fila para sets resueltos */
+type ResolvedSet = {
+  setNumber: number;
+  pairAGames: number;
+  pairBGames: number;
+};
+
+/** Tipo de fila para stats de jugador */
+type ResolvedStats = {
+  playerId: number;
+  pointsWon: number;
+  winners: number;
+  unforcedErrors: number;
+  smashWinners: number;
+};
+
 /**
- * Construye un MatchSnapshot a partir de una fila de la tabla `matches`.
- * Centraliza el mapeo para evitar duplicación entre getSnapshot / addPoint.
+ * Resuelve nombres de jugadores por sus IDs en una sola query.
+ * Devuelve un mapa id → name para lookup O(1).
  */
-function toSnapshot(row: typeof matches.$inferSelect): MatchSnapshot {
+async function resolvePlayerNames(
+  playerIds: number[],
+): Promise<Record<number, string>> {
+  if (playerIds.length === 0) return {};
+  const uniqueIds = [...new Set(playerIds)];
+  const rows = await db
+    .select({ id: players.id, name: players.name })
+    .from(players)
+    .where(inArray(players.id, uniqueIds));
+  return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+}
+
+/**
+ * Resuelve el historial de sets para un partido.
+ */
+async function resolveMatchSets(matchId: number): Promise<ResolvedSet[]> {
+  return db
+    .select({
+      setNumber: matchSets.setNumber,
+      pairAGames: matchSets.pairAGames,
+      pairBGames: matchSets.pairBGames,
+    })
+    .from(matchSets)
+    .where(eq(matchSets.matchId, matchId))
+    .orderBy(matchSets.setNumber);
+}
+
+/**
+ * Resuelve las estadísticas de los jugadores para un partido.
+ */
+async function resolveMatchStats(matchId: number): Promise<ResolvedStats[]> {
+  const result = await db
+    .select({
+      playerId: matchStats.playerId,
+      pointsWon: matchStats.pointsWon,
+      winners: matchStats.winners,
+      unforcedErrors: matchStats.unforcedErrors,
+      smashWinners: matchStats.smashWinners,
+    })
+    .from(matchStats)
+    .where(eq(matchStats.matchId, matchId));
+
+  return result.map((r) => ({
+    playerId: r.playerId,
+    pointsWon: r.pointsWon ?? 0,
+    winners: r.winners ?? 0,
+    unforcedErrors: r.unforcedErrors ?? 0,
+    smashWinners: r.smashWinners ?? 0,
+  }));
+}
+
+/**
+ * Construye un MatchSnapshot enriquecido a partir de una fila de `matches`,
+ * un mapa de nombres de jugadores y el historial de sets.
+ */
+
+function toSnapshot(
+  row: typeof matches.$inferSelect,
+  playerNames: Record<number, string>,
+  courtName: string,
+  sets: ResolvedSet[],
+  stats: ResolvedStats[],
+  finalMode = false,
+): MatchSnapshot {
   return {
     id: row.id,
+    matchType: row.matchType || "friendly",
     pairAName: row.pairAName || "Unknown",
     pairBName: row.pairBName || "Unknown",
+    pairAPlayer1Id: row.pairAPlayer1Id,
+    pairAPlayer2Id: row.pairAPlayer2Id,
+    pairBPlayer1Id: row.pairBPlayer1Id,
+    pairBPlayer2Id: row.pairBPlayer2Id,
+    pairAPlayer1Name: playerNames[row.pairAPlayer1Id] || "Unknown",
+    pairAPlayer2Name: playerNames[row.pairAPlayer2Id] || "Unknown",
+    pairBPlayer1Name: playerNames[row.pairBPlayer1Id] || "Unknown",
+    pairBPlayer2Name: playerNames[row.pairBPlayer2Id] || "Unknown",
     pairAScore: row.pairAScore || "0",
     pairBScore: row.pairBScore || "0",
     pairAGames: row.pairAGames || 0,
@@ -87,9 +176,24 @@ function toSnapshot(row: typeof matches.$inferSelect): MatchSnapshot {
     currentSetIdx: row.currentSetIdx || 1,
     isTieBreak: row.isTieBreak || false,
     hasGoldPoint: row.hasGoldPoint || false,
+    startTime: row.startTime?.toISOString() ?? null,
+    endTime: row.endTime?.toISOString() ?? null,
+    courtId: row.courtId,
+    courtName: courtName || "Unknown Court",
     winnerSide: row.winnerSide as "pair_a" | "pair_b" | null,
     servingPlayerId: row.servingPlayerId,
+    servingPlayerName: row.servingPlayerId
+      ? playerNames[row.servingPlayerId] || null
+      : null,
     status: row.status,
+    sets,
+    stats: stats.map((s) => ({
+      playerId: s.playerId,
+      pointsWon: s.pointsWon ?? 0,
+      winners: s.winners ?? 0,
+      unforcedErrors: s.unforcedErrors ?? 0,
+      smashWinners: s.smashWinners ?? 0,
+    })),
   };
 }
 
@@ -108,16 +212,38 @@ export const MatchService = {
    * Recupera el estado completo de un partido por ID.
    */
   async getSnapshot(matchId: number): Promise<MatchSnapshot> {
-    const [matchData] = await db
-      .select()
+    const [result] = await db
+      .select({
+        match: matches,
+        courtName: courts.name,
+      })
       .from(matches)
+      .leftJoin(courts, eq(matches.courtId, courts.id))
       .where(eq(matches.id, matchId));
 
-    if (!matchData) {
+    if (!result || !result.match) {
       throw new Error(`Match ${matchId} not found`);
     }
 
-    return toSnapshot(matchData);
+    const matchData = result.match;
+    const courtName = result.courtName || "Unknown";
+
+    // Resolver datos relacionados en paralelo
+    const playerIds = [
+      matchData.pairAPlayer1Id,
+      matchData.pairAPlayer2Id,
+      matchData.pairBPlayer1Id,
+      matchData.pairBPlayer2Id,
+      matchData.servingPlayerId,
+    ].filter((id): id is number => id != null);
+
+    const [playerNames, sets, stats] = await Promise.all([
+      resolvePlayerNames(playerIds),
+      resolveMatchSets(matchId),
+      resolveMatchStats(matchId),
+    ]);
+
+    return toSnapshot(matchData, playerNames, courtName, sets, stats);
   },
 
   // ===========================================================================
@@ -144,18 +270,45 @@ export const MatchService = {
     }
 
     // ── 1. FETCH MATCH ────────────────────────────────────────────────────
-    const [matchData] = await db
-      .select()
+    // ── 1. FETCH MATCH ────────────────────────────────────────────────────
+    const [result] = await db
+      .select({
+        match: matches,
+        courtName: courts.name,
+      })
       .from(matches)
+      .leftJoin(courts, eq(matches.courtId, courts.id))
       .where(eq(matches.id, matchIdInt));
 
-    if (!matchData) throw new Error(`Match ${matchId} not found`);
+    if (!result || !result.match) throw new Error(`Match ${matchId} not found`);
+
+    const matchData = result.match;
+    const courtName = result.courtName || "Unknown";
 
     // Si el partido ya terminó, devolver snapshot actual sin procesar
     if (matchData.status === "finished") {
       console.warn(`[LOGIC] :: IGNORED :: Match ${matchId} is finished`);
+      const finishedPlayerIds = [
+        matchData.pairAPlayer1Id,
+        matchData.pairAPlayer2Id,
+        matchData.pairBPlayer1Id,
+        matchData.pairBPlayer2Id,
+        matchData.servingPlayerId,
+      ].filter((id): id is number => id != null);
+      const [finishedNames, finishedSets, finishedStats] = await Promise.all([
+        resolvePlayerNames(finishedPlayerIds),
+        resolveMatchSets(matchIdInt),
+        resolveMatchStats(matchIdInt),
+      ]);
       return {
-        nextSnapshot: toSnapshot(matchData),
+        nextSnapshot: toSnapshot(
+          matchData,
+          finishedNames,
+          courtName,
+          finishedSets,
+          finishedStats,
+          true,
+        ),
         history: {
           setNumber: 0,
           gameNumber: 0,
@@ -197,7 +350,25 @@ export const MatchService = {
         : "pair_a";
 
     // ── 3. ENGINE (Pure, sin IO) ──────────────────────────────────────────
-    const currentSnapshot = toSnapshot(matchData);
+    // Resolver datos de contexto para el snapshot enriquecido
+    const allPlayerIds = [
+      matchData.pairAPlayer1Id,
+      matchData.pairAPlayer2Id,
+      matchData.pairBPlayer1Id,
+      matchData.pairBPlayer2Id,
+      matchData.servingPlayerId,
+    ].filter((id): id is number => id != null);
+    const playerNames = await resolvePlayerNames(allPlayerIds);
+    const currentSets = await resolveMatchSets(matchIdInt);
+    const currentStats = await resolveMatchStats(matchIdInt);
+
+    const currentSnapshot = toSnapshot(
+      matchData,
+      playerNames,
+      courtName,
+      currentSets,
+      currentStats,
+    );
     const outcome = PadelEngine.processPoint(
       currentSnapshot,
       scorerSide,
@@ -313,7 +484,15 @@ export const MatchService = {
       }
     }
 
-    // 5b. Notificar actualización de marcador a suscriptores
+    // 5b. Re-resolver sets y stats (pueden haber cambiado tras la transacción)
+    const [updatedSets, updatedStats] = await Promise.all([
+      resolveMatchSets(matchIdInt),
+      resolveMatchStats(matchIdInt),
+    ]);
+    nextSnapshot.sets = updatedSets;
+    nextSnapshot.stats = updatedStats;
+
+    // 5c. Notificar actualización de marcador a suscriptores
     await broadcastToAll(matchId, {
       type: "MATCH_UPDATE",
       matchId,
@@ -321,6 +500,20 @@ export const MatchService = {
       snapshot: nextSnapshot,
       lastPoint: history,
     });
+
+    // 5d. Emitir MATCH_FINISHED si procede
+    if (nextSnapshot.status === "finished" && nextSnapshot.winnerSide) {
+      await broadcastToAll(matchId, {
+        type: "MATCH_FINISHED",
+        matchId,
+        winnerSide: nextSnapshot.winnerSide,
+        finalScore: {
+          sets: updatedSets,
+          pairASets: nextSnapshot.pairASets,
+          pairBSets: nextSnapshot.pairBSets,
+        },
+      });
+    }
 
     console.log(
       `[GAME]  :: POINT :: ${matchId} | ${actionType} by ${playerId} | State: ${nextSnapshot.pairAGames}-${nextSnapshot.pairBGames} (${nextSnapshot.pairAScore}-${nextSnapshot.pairBScore})`,

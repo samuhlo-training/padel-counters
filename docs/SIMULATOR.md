@@ -1,89 +1,63 @@
-# 🎮 Padel Simulator Service
+# 🎮 PADEL_SIMULATOR_SVC
 
-Este servicio permite simular partidos en tiempo real para probar el Frontend y la integración con WebSockets sin necesidad de jugar partidos reales o tener sensores IoT conectados.
-
-## 🚀 Uso del Simulador
-
-El simulador expone endpoints HTTP que pueden ser llamados desde el Frontend (o Postman/Curl) para iniciar y detener partidos simulad### 0. Prerrequisitos (Seeding)
-
-Para simular partidos, necesitas tener pistas en la base de datos.
-Hemos creado un comando para generar 8 pistas automáticas con nombres reales.
-
-```bash
-bun db:seed
-```
-
-Esto creará pistas como "Pista Central Vodafone", "Pista Red Bull", etc. si no existen.
-
-### 1. Iniciar Simulación
-
-Crea un partido nuevo con 4 bots y empieza a generar puntos automáticamente cada 3 segundos.
-
-**Endpoint:** `POST /simulator/start`
-
-**Body:**
-```json
-{
-  "courtId": 1
-}
-```
-
-**Respuesta:**
-```json
-{
-  "status": "success",
-  "message": "Simulation started for court 1"
-}
-```
-
-**Comportamiento:**
-1. Crea 4 jugadores "Bot" si no existen.
-2. Crea un partido en estado `live` asignado a la pista indicada.
-3. Empieza un bucle infinito que:
-   - Genera un punto aleatorio con lógica detallada:
-     - **Strokes variados**: Smash, Bandeja, Víbora, Voleas, Globos, etc.
-     - **Tipos de punto**: Winners, Errores forzados/no forzados.
-     - **Velocidad**: Simula velocidad para remates potentes.
-   - **Genera Comentarios (CommentaryBot)**: "¡MISIL DE Bot Alpha! 🚀 Smash a 145km/h".
-   - Actualiza la base de datos (Score, historial, stats).
-   - **Dispara eventos WebSocket**:
-     - `MATCH_UPDATE`: Marcador actualizado.
-     - `COMMENTARY`: Nuevo comentario generado.
-     - `COURT_UPDATE`: Estado de la pista.
+> **ROLE:** MOCK DATA GENERATOR
+> **CONTEXT:** DEV / TESTING
+> **INTEGRATION:** DIRECT (SAME PROCESS)
 
 ---
 
-### 2. Detener Simulación
+## 00 __ CONCEPT
 
-Detiene el bucle de generación de puntos para un partido específico.
+Simulador integrado para pruebas de Frontend y estrés de WebSockets. Genera partidos completos con comportamiento pseudo-aleatorio realista (winners, errores, comentarios).
 
-**Endpoint:** `POST /simulator/stop`
+---
 
-**Body:**
-```json
-{
-  "matchId": 123
-}
+## 01 __ USAGE
+
+### 01.1 __ PREREQUISITES (SEEDING)
+
+Para simular, necesitas pistas en la base de datos.
+
+```bash
+bun db:seed
+# CREATES: "Pista Central Vodafone", "Pista Red Bull", etc.
 ```
 
-**Respuesta:**
+### 01.2 __ START_SIMULATION
+
+Crea 4 bots y comienza un partido en la pista indicada.
+
+**Request:** `POST /simulator/start`
 ```json
-{
-  "status": "success",
-  "message": "Simulation stopped for match 123"
-}
+{ "courtId": 1 }
 ```
 
-## 🛠️ Configuración (Dev/Internal)
+**Flow:**
+1.  **Init**: Crea bots + Partido `live`.
+2.  **Loop**: Genera evento cada 3s.
+3.  **Logic**: Decide tipo de punto (Smash/Volea/Error).
+4.  **Broadcast**: Emite `MATCH_UPDATE` + `COMMENTARY`.
 
-El comportamiento de la simulación se puede ajustar en `services/simulator.ts`:
+### 01.3 __ STOP_SIMULATION
 
-- `INTERVAL_MS`: Tiempo entre puntos (Default: 3000ms).
-- `PROBABILITY_ERROR`: Probabilidad de error no forzado.
-- `PROBABILITY_WINNER`: Probabilidad de winner.
+Detiene el loop de generación para un partido.
 
-## ⚠️ Notas Importantes
+**Request:** `POST /simulator/stop`
+```json
+{ "matchId": 123 }
+```
 
-- El simulador corre en el **mismo proceso** que el servidor backend.
-- Utiliza el servicio `MatchService` y el sistema de `Broadcast` real, por lo que **los clientes WebSocket recibirán actualizaciones reales** incluidas las notificaciones de comentarios.
-- Los partidos creados se pueden ver en `/courts` y `/matches/:id`.
+---
+
+## 02 __ CONFIGURATION
+
+Parámetros ajustables en `services/simulator.ts`:
+
+| CONSTANT | DEFAULT | DESC |
+| :--- | :--- | :--- |
+| `INTERVAL_MS` | `3000` | Tiempo entre puntos |
+| `PROBABILITY_ERROR` | `0.3` | Ratio de errores no forzados |
+| `PROBABILITY_WINNER` | `0.4` | Ratio de winners limpios |
+
+> [!NOTE]
+> El simulador corre en el **mismo proceso** que el backend. Todos los eventos son reales y se transmiten por el bus de WebSockets de producción.

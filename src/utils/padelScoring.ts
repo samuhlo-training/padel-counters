@@ -1,16 +1,17 @@
 /**
- * █ [UTILS] :: PADEL_SCORING_ENGINE
+ * █ [ENGINE] :: PADEL_SCORING_LOGIC
  * =====================================================================
- * DESC:   Lógica PURA de puntuación de Pádel.
- *         Entrada: Estado Actual + Acción -> Salida: Siguiente Estado.
- *         Sigue reglas oficiales (World Padel Tour / Premier Padel).
- * STATUS: GOLD MASTER
+ * DESC:   Motor puro de lógica de puntuación.
+ *         Calcula el siguiente estado del partido dado un evento.
+ * TYPE:   Pure Function (No Side Effects)
+ * RULES:  FIP Official Rules (Tie-break, Gold Point)
  * =====================================================================
  */
 import type {
   MatchSnapshot,
   PointOutcome,
   PointMethod,
+  PadelStroke,
 } from "../types/padel.types.ts";
 
 export class PadelEngine {

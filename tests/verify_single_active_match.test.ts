@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { MatchService } from "../src/services/matchService";
 import { db } from "../src/db/db";

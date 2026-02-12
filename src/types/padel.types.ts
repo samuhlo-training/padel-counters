@@ -31,8 +31,21 @@ export type TieBreakPoint = number;
  */
 export interface MatchSnapshot {
   id: number;
+  matchType: string;
   pairAName: string;
   pairBName: string;
+
+  // -- PLAYER IDs --
+  pairAPlayer1Id: number;
+  pairAPlayer2Id: number;
+  pairBPlayer1Id: number;
+  pairBPlayer2Id: number;
+
+  // -- PLAYER NAMES (resolved via JOIN) --
+  pairAPlayer1Name: string;
+  pairAPlayer2Name: string;
+  pairBPlayer1Name: string;
+  pairBPlayer2Name: string;
 
   // -- SCORE --
   pairAScore: string;
@@ -47,10 +60,29 @@ export interface MatchSnapshot {
   isTieBreak: boolean;
   hasGoldPoint: boolean;
 
+  // -- TIMING --
+  startTime: string | null;
+  endTime: string | null;
+  courtId: number;
+  courtName: string; // [NEW] Enhanced history detail
+
   // -- STATUS --
   winnerSide?: "pair_a" | "pair_b" | null;
   servingPlayerId?: number | null;
+  servingPlayerName?: string | null;
   status: MatchStatus;
+
+  // -- SET HISTORY --
+  sets: Array<{ setNumber: number; pairAGames: number; pairBGames: number }>;
+
+  // -- PLAYER STATS --
+  stats: Array<{
+    playerId: number;
+    pointsWon: number;
+    winners: number;
+    unforcedErrors: number;
+    smashWinners: number;
+  }>;
 }
 
 // =============================================================================

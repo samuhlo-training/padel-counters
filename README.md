@@ -2,7 +2,7 @@
   <br />
   <br />
 
-  # <code>padel-counters</code>
+  # <code>padelcourts_back</code>
 
   **MOTOR DE COMENTARIOS DEPORTIVOS EN TIEMPO REAL**
   <br />
@@ -80,7 +80,7 @@ graph TB
 
 ```bash
 # 1. Clonar repositorio
-git clone https://github.com/samuhlo-training/padel-counters.git
+git clone https://github.com/samuhlo-training/padelcourts_back.git
 
 # 2. Instalar dependencias
 bun install
@@ -168,12 +168,14 @@ erDiagram
 > *Diagrama simplificado. Ver `docs/CURRENT_STATE_DOCS.md` para el esquema completo.*
 
 
+
 ### 03 __ CARACTERÍSTICAS CLAVE
 
 *   **Zero-Overhead WebSockets**: Uso directo de `Bun.upgrade` integrado en Hono.
 *   **Resilient Rate Limiting**: Middleware con estrategia "Fail-open" (si Redis cae, el tráfico pasa).
 *   **Domain-Driven Structure**: Organización por módulos (`routes/matches`, `ws/server`) en lugar de capas técnicas puras.
 *   **Strict Typing**: Schema validation con Zod + TypeScript en cada frontera (HTTP & DB).
+*   **Match Simulator**: Servicio integrado para simular partidos completos con bots y comentarios automáticos (`/simulator`).
 
 ### 03.1 __ API & WEBSOCKETS
 
@@ -181,11 +183,12 @@ erDiagram
 
 | Método | Endpoint | Acción |
 | :--- | :--- | :--- |
-| `GET` | `/matches` | Lista de partidos activos |
+| `GET`  | `/matches` | Lista de partidos activos |
 | `POST` | `/matches` | Crear nuevo partido |
 | `POST` | `/matches/:id/point` | Registrar punto y actualizar score |
-| `GET` | `/matches/:id/commentary` | Obtener feed de comentarios |
-| `GET` | `/courts` | Consultar estado de pistas (Libre/Ocupada) |
+| `GET`  | `/matches/:id/commentary` | Obtener feed de comentarios |
+| `GET`  | `/courts` | Consultar estado de pistas (Libre/Ocupada) |
+| `POST` | `/simulator/start` | Iniciar simulación en una pista |
 
 #### ⚡ WebSockets (Bun native)
 
@@ -249,6 +252,7 @@ El sistema cuenta con una suite de pruebas automatizadas que garantizan la integ
 | **Real-Time (WS)** | `verify_ws_snapshot.test.ts` | Suscripción y entrega de estado inicial |
 | **Real-Time (WS)** | `verify_ws_bi_directional.test.ts` | Peticiones bajo demanda sobre WebSocket |
 | **Lógica (Core)** | `verify_padel_flow.test.ts` | Flujo completo de sets, Gold Point y Tie-break |
+| **Simulación** | `simulator_flow.test.ts` | Verificación del ciclo de vida de bots |
 
 *Para ejecutar la suite completa:*
 
@@ -272,7 +276,10 @@ src/
 ```
 
 > [!NOTE]
-> *Consultar `docs/CURRENT_STATE_DOCS.md` para un desglose detallado de cada archivo.*
+> *Consultar `docs` para documentación detallada:*
+> * [Estado Actual](docs/CURRENT_STATE_DOCS.md)
+> * [API & WebSockets](docs/API_AND_WEBSOCKETS.md)
+> * [Simulador](docs/SIMULATOR.md)
 
 <div align="center">
 <br />

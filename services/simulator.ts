@@ -205,15 +205,63 @@ export const Simulator = {
   },
 
   /**
-   * Stop simulation manually
+   * Stop simulation manually.
+   * Cancels the match in DB, frees the court, and broadcasts the update.
    */
-  stop(matchId: number) {
-    if (ACTIVE_SIMULATIONS.has(matchId)) {
-      ACTIVE_SIMULATIONS.delete(matchId);
-      console.log(`[SIM] 🛑 Simulación detenida para Match ${matchId}`);
-      return true;
+  async stop(matchId: number) {
+    if (!ACTIVE_SIMULATIONS.has(matchId)) return false;
+
+    ACTIVE_SIMULATIONS.delete(matchId);
+    console.log(`[SIM] 🛑 Simulación detenida para Match ${matchId}`);
+
+    try {
+      // 1. Fetch match to get courtId
+      const [matchData] = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, matchId));
+
+      if (!matchData) {
+        console.warn(`[SIM] ⚠️ Match ${matchId} not found in DB`);
+        return true;
+      }
+
+      // 2. Mark match as canceled
+      await db
+        .update(matches)
+        .set({ status: "canceled", endTime: new Date() })
+        .where(eq(matches.id, matchId));
+
+      // 3. Free the court
+      await db
+        .update(courts)
+        .set({ activeMatchId: null })
+        .where(eq(courts.id, matchData.courtId));
+
+      // 4. Broadcast court update (free)
+      const { broadcastCourtUpdate, broadcastToAll } =
+        await import("../src/ws/utils");
+      await broadcastCourtUpdate(matchData.courtId, "free", null, null);
+
+      // 5. Broadcast MATCH_UPDATE con status:canceled para que el frontend
+      //    elimine el badge "Live" y limpie suscripciones
+      const canceledSnapshot = await MatchService.getSnapshot(matchId);
+      await broadcastToAll(String(matchId), {
+        type: "MATCH_UPDATE",
+        matchId: String(matchId),
+        timestamp: Date.now(),
+        snapshot: canceledSnapshot,
+        lastPoint: null,
+      });
+
+      console.log(
+        `[SIM] ✅ Match ${matchId} canceled, court ${matchData.courtId} freed`,
+      );
+    } catch (err) {
+      console.error(`[SIM] ⚠️ Error cleaning up match ${matchId}:`, err);
     }
-    return false;
+
+    return true;
   },
 
   /**
@@ -252,6 +300,13 @@ export const Simulator = {
       }
     }
     return botIds;
+  },
+
+  /**
+   * Returns the set of matchIds currently being simulated.
+   */
+  getActiveMatchIds(): Set<number> {
+    return new Set(ACTIVE_SIMULATIONS);
   },
 
   /**

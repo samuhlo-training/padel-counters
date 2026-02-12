@@ -27,6 +27,12 @@ export const MATCH_STATUS = {
  */
 export const listMatchesQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+  status: z
+    .enum(["scheduled", "warmup", "live", "finished", "canceled"])
+    .optional(),
+  sortBy: z.enum(["createdAt", "startTime"]).default("createdAt"),
+  sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
 /**
@@ -75,6 +81,9 @@ export const createMatchSchema = z
     courtId: z.coerce.number().int().positive(),
     startTime: isoDateString,
     endTime: isoDateString.optional(),
+    status: z
+      .enum(["scheduled", "warmup", "live", "finished", "canceled"])
+      .default("scheduled"),
   })
   .superRefine((data, ctx) => {
     // [VALIDATION] -> Validar unicidad de los 4 IDs de jugadores
