@@ -101,7 +101,7 @@ async function seed() {
       name,
       country: getRandomItem(COUNTRIES),
       ranking: randomInt(1, 100),
-      imageUrl: `https://ui-avatars.com/api/?name=${name.replace(" ", "+")}&background=random`,
+      imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
     }));
 
     if (newPlayersData.length > 0) {

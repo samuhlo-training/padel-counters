@@ -93,9 +93,9 @@ export type ServerMessage =
   | {
       type: "COURT_UPDATE";
       payload: {
-        courtId: number | string;
+        courtId: number;
         status: "busy" | "free";
-        activeMatchId: number | null;
-        startTime?: Date | string | null;
+        activeMatchId: string | null;
+        startTime?: string | null;
       };
     };

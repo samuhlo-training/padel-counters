@@ -236,11 +236,15 @@ export const matchStats = pgTable(
 // █ RELATIONS
 // =============================================================================
 
-export const matchesRelations = relations(matches, ({ many }) => ({
+export const matchesRelations = relations(matches, ({ one, many }) => ({
   sets: many(matchSets),
   stats: many(matchStats),
   pointHistory: many(pointHistory),
   commentary: many(commentary),
+  court: one(courts, {
+    fields: [matches.courtId],
+    references: [courts.id],
+  }),
 }));
 
 export const pointHistoryRelations = relations(pointHistory, ({ one }) => ({

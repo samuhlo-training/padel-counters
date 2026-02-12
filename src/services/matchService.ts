@@ -570,24 +570,25 @@ export const MatchService = {
   async createMatch(
     data: CreateMatchInput,
   ): Promise<{ id: number; [key: string]: unknown }> {
-    // ── 1. VALIDAR DISPONIBILIDAD DE PISTA ──────────────────────────────
-    const [existingCourt] = await db
-      .select()
-      .from(courts)
-      .where(eq(courts.id, data.courtId));
-
-    if (!existingCourt) {
-      throw new Error(`Court ${data.courtId} not found`);
-    }
-
-    if (existingCourt.activeMatchId) {
-      throw new Error(
-        `Court ${data.courtId} is already occupied by match ${existingCourt.activeMatchId}`,
-      );
-    }
-
     // ── 2. TRANSACCIÓN: MATCH + COURT + STATS ───────────────────────────
     const newMatch = await db.transaction(async (tx) => {
+      // A. Validate court availability (inside transaction for atomicity)
+      const [existingCourt] = await tx
+        .select()
+        .from(courts)
+        .where(eq(courts.id, data.courtId));
+
+      if (!existingCourt) {
+        throw new Error(`Court ${data.courtId} not found`);
+      }
+
+      if (existingCourt.activeMatchId) {
+        throw new Error(
+          `Court ${data.courtId} is already occupied by match ${existingCourt.activeMatchId}`,
+        );
+      }
+
+      // A. Insertar partido
       // A. Insertar partido
       const [match] = await tx
         .insert(matches)

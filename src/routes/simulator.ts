@@ -58,8 +58,13 @@ simulatorApp.post("/start", async (c) => {
       return c.json({ error: "courtId is required" }, 400);
     }
 
+    const numericCourtId = Number(courtId);
+    if (!Number.isInteger(numericCourtId) || numericCourtId <= 0) {
+      return c.json({ error: "courtId must be a positive integer" }, 400);
+    }
+
     // Await match creation to get the matchId, the simulation loop runs in background via setTimeout
-    const result = await Simulator.createAndSimulate(Number(courtId));
+    const result = await Simulator.createAndSimulate(numericCourtId);
 
     return c.json({
       status: "success",
@@ -85,7 +90,12 @@ simulatorApp.post("/stop", async (c) => {
       return c.json({ error: "matchId is required" }, 400);
     }
 
-    const stopped = await Simulator.stop(Number(matchId));
+    const numericMatchId = Number(matchId);
+    if (!Number.isInteger(numericMatchId) || numericMatchId <= 0) {
+      return c.json({ error: "matchId must be a positive integer" }, 400);
+    }
+
+    const stopped = await Simulator.stop(numericMatchId);
 
     if (stopped) {
       return c.json({

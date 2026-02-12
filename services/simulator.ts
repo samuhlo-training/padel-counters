@@ -120,6 +120,8 @@ export const Simulator = {
 
         if (!player) {
           console.warn(`[SIM] ⚠️ Player index ${winnerIdx} not found`);
+          ACTIVE_SIMULATIONS.delete(matchId);
+          // Optionally trigger cleanup: await this.stop(matchId);
           return;
         }
         // 3. Determinar tipo de punto y golpe (Más detallado)

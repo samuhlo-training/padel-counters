@@ -247,12 +247,7 @@ matchesApp.get("/:id", async (c) => {
 
       // Extended stats from point history
       const playerPoints = history.filter((h) => h.winnerPlayerId === playerId);
-      const playerErrors = history.filter(
-        (h) =>
-          h.winnerPlayerId !== playerId &&
-          h.winnerPlayerId !== null &&
-          (h.method === "unforced_error" || h.method === "forced_error"),
-      );
+
       // Note: Logic for errors is tricky from point history because we record WHO WON the point, not necessarily who made the error.
       // However, if I won a point by 'unforced_error', it means the opponent made the error.
       // So to get MY errors, I need to find points where OPPONENT won by 'unforced_error' or 'forced_error'.
@@ -302,7 +297,8 @@ matchesApp.get("/:id", async (c) => {
     };
 
     // MVP Calculation (simple: max points)
-    const maxPoints = Math.max(...s.stats.map((st) => st.pointsWon || 0));
+    const pointsArray = s.stats.map((st) => st.pointsWon || 0);
+    const maxPoints = pointsArray.length > 0 ? Math.max(...pointsArray) : 0;
 
     // Build player objects
     const buildPlayer = (id: number, name: string) => {
