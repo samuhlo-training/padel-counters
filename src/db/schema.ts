@@ -96,7 +96,7 @@ export const matches = pgTable(
     status: matchStatusEnum("status").default("scheduled").notNull(),
 
     // Relación con Pistas (Courts) - FK manejado en relations para evitar referencia circular
-    courtId: integer("court_id"),
+    courtId: integer("court_id").notNull(),
 
     // Marcador Actual (La foto del momento)
     currentSetIdx: integer("current_set_idx").default(1),
@@ -236,11 +236,15 @@ export const matchStats = pgTable(
 // █ RELATIONS
 // =============================================================================
 
-export const matchesRelations = relations(matches, ({ many }) => ({
+export const matchesRelations = relations(matches, ({ one, many }) => ({
   sets: many(matchSets),
   stats: many(matchStats),
   pointHistory: many(pointHistory),
   commentary: many(commentary),
+  court: one(courts, {
+    fields: [matches.courtId],
+    references: [courts.id],
+  }),
 }));
 
 export const pointHistoryRelations = relations(pointHistory, ({ one }) => ({

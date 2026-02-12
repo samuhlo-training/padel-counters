@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770366890015,
-      "tag": "0000_petite_dark_beast",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770375522575,
-      "tag": "0001_crazy_chamber",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1770376167039,
-      "tag": "0002_productive_surge",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1770549115808,
-      "tag": "0003_bumpy_venom",
+      "when": 1770730882952,
+      "tag": "0000_dusty_silhouette",
       "breakpoints": true
     }
   ]

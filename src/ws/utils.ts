@@ -90,26 +90,7 @@ export async function broadcastToMatch(
 // █ UTILITIES: BUSINESS LOGIC (HIGH LEVEL)
 // =============================================================================
 
-/**
- * ◼️ FUNCTION: BROADCAST_MATCH_CREATED
- * ---------------------------------------------------------
- * Notifica a todos los clientes que se creó un nuevo partido.
- */
-export async function broadcastMatchCreated(match: {
-  id: number;
-  [key: string]: unknown;
-}): Promise<void> {
-  if (match?.id == null) {
-    throw new Error("[ERR]   :: MATCH_MISSING :: Match not initialized");
-  }
-  console.log(
-    `[WS]    -> BCAST_EVENT   :: type: MATCH_CREATED | id: ${match.id}`,
-  );
-  await broadcastToAll("global", {
-    type: "MATCH_CREATED",
-    data: match,
-  });
-}
+// DEPRECATED: broadcastMatchCreated removed. Use broadcastCourtUpdate.
 
 /**
  * ◼️ FUNCTION: BROADCAST_COMMENTARY
@@ -123,5 +104,30 @@ export async function broadcastCommentary(
   await broadcastToMatch(matchId, {
     type: "COMMENTARY",
     data: comment,
+  });
+}
+
+/**
+ * ◼️ FUNCTION: BROADCAST_COURT_UPDATE
+ * ---------------------------------------------------------
+ * Notifica que una pista ha cambiado de estado (busy/free).
+ */
+export async function broadcastCourtUpdate(
+  courtId: number | string,
+  status: "busy" | "free",
+  activeMatchId: number | null,
+  startTime?: Date | string | null, // Added startTime
+): Promise<void> {
+  console.log(
+    `[WS]    -> BCAST_EVENT   :: type: COURT_UPDATE | court: ${courtId} | status: ${status}`,
+  );
+  await broadcastToAll("global", {
+    type: "COURT_UPDATE",
+    payload: {
+      courtId,
+      status,
+      activeMatchId,
+      startTime,
+    },
   });
 }

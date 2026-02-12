@@ -17,6 +17,7 @@ import {
 } from "./ws/server.ts";
 import { commentaryApp } from "./routes/commentary.ts";
 import { courtsApp } from "./routes/courts.ts";
+import { simulatorApp } from "./routes/simulator.ts";
 
 // =============================================================================
 // █ CONFIG: ENTORNO
@@ -136,6 +137,8 @@ app.route("/courts", courtsApp);
 // [EXPLICACIÓN] -> ¿Por qué "/matches" y no "/commentary"?
 // Esto monta las rutas de comentarios bajo "/matches".
 // Resultado final: "/matches/:id/commentary" (Jerarquía RESTful lógica).
+
+app.route("/simulator", simulatorApp);
 
 // [VITALIDAD] (HEALTH CHECK)
 app.get("/", (c) => {

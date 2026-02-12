@@ -6,11 +6,7 @@
  * STATUS: BETA
  * =====================================================================
  */
-import type {
-  PointMethod,
-  PadelStroke,
-  TelemetryData,
-} from "../types/index.ts";
+import type { TelemetryData } from "../types/index.ts";
 
 /**
  * ◼️ FUNCTION: GENERATE_AUTOMATED_COMMENT

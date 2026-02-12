@@ -1,5 +1,5 @@
 {
-  "id": "30bbe0f0-18c7-4cd2-bd92-6fb17fc2db8a",
+  "id": "90f014b7-725e-4b1a-81f3-4397e20bf3df",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -74,6 +74,58 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.courts": {
+      "name": "courts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_token": {
+          "name": "auth_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active_match_id": {
+          "name": "active_match_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "courts_auth_token_unique": {
+          "name": "courts_auth_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "auth_token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.match_sets": {
       "name": "match_sets",
       "schema": "",
@@ -138,7 +190,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "match_sets_match_id_set_number_unique": {
+          "name": "match_sets_match_id_set_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "match_id",
+            "set_number"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -224,7 +285,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "match_stats_match_player_unique": {
+          "name": "match_stats_match_player_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "match_id",
+            "player_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -239,17 +309,26 @@
           "primaryKey": true,
           "notNull": true
         },
+        "match_type": {
+          "name": "match_type",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'friendly'"
+        },
         "pair_a_name": {
           "name": "pair_a_name",
-          "type": "text",
+          "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'Pair A'"
         },
         "pair_b_name": {
           "name": "pair_b_name",
-          "type": "text",
+          "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'Pair B'"
         },
         "pair_a_player1_id": {
           "name": "pair_a_player1_id",
@@ -283,6 +362,12 @@
           "notNull": true,
           "default": "'scheduled'"
         },
+        "court_id": {
+          "name": "court_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "current_set_idx": {
           "name": "current_set_idx",
           "type": "integer",
@@ -299,6 +384,20 @@
         },
         "pair_b_games": {
           "name": "pair_b_games",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "pair_a_sets": {
+          "name": "pair_a_sets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "pair_b_sets": {
+          "name": "pair_b_sets",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -543,6 +642,20 @@
           "notNull": false,
           "default": "'winner'"
         },
+        "stroke": {
+          "name": "stroke",
+          "type": "padel_stroke",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_net_point": {
+          "name": "is_net_point",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "score_after_pair_a": {
           "name": "score_after_pair_a",
           "type": "text",
@@ -632,6 +745,22 @@
         "canceled"
       ]
     },
+    "public.padel_stroke": {
+      "name": "padel_stroke",
+      "schema": "public",
+      "values": [
+        "forehand",
+        "backhand",
+        "smash",
+        "bandeja",
+        "vibora",
+        "volley_forehand",
+        "volley_backhand",
+        "lob",
+        "drop_shot",
+        "wall_boast"
+      ]
+    },
     "public.point_method": {
       "name": "point_method",
       "schema": "public",
@@ -639,11 +768,8 @@
         "winner",
         "unforced_error",
         "forced_error",
-        "smash",
-        "volley",
         "service_ace",
-        "double_fault",
-        "penalty"
+        "double_fault"
       ]
     }
   },

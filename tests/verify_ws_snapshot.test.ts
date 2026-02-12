@@ -256,4 +256,46 @@ describe("WebSocket Snapshot Verification", () => {
 
     console.log("✅ Broadcast to all subscribers working");
   });
+
+  it("should include valid player stats in snapshot", async () => {
+    // Usar mismo matchId que el setup
+    wsClient = new TestWSClient();
+    await wsClient.connect();
+    await wsClient.subscribe(matchId);
+
+    // Consumir snapshot inicial
+    await wsClient.waitForMessage("MATCH_UPDATE");
+
+    // Anotar un punto ganador
+    const scorerId = playerIds[0];
+    await processPointScored({
+      matchId: matchId.toString(),
+      playerId: scorerId.toString(),
+      actionType: "winner",
+      stroke: "smash", // Para verificar smashWinners
+    });
+
+    // Esperar actualización
+    const updateMsg = await wsClient.waitForMessage(
+      "MATCH_UPDATE",
+      2000,
+      (m) => {
+        const scorerStats = m.snapshot.stats.find(
+          (s: any) => s.playerId === scorerId,
+        );
+        return scorerStats && scorerStats.pointsWon > 0;
+      },
+    );
+
+    const stats = updateMsg.snapshot.stats;
+    const scorerStats = stats.find((s: any) => s.playerId === scorerId);
+
+    expect(scorerStats).toBeDefined();
+    expect(scorerStats.pointsWon).toBe(1); // Ganó 1 punto
+    expect(scorerStats.winners).toBe(1); // Fue winner
+    expect(scorerStats.smashWinners).toBe(1); // Fue smash
+    expect(scorerStats.unforcedErrors).toBe(0);
+
+    console.log("✅ Player stats verified in snapshot:", scorerStats);
+  });
 });
